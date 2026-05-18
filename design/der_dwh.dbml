@@ -1,16 +1,3 @@
-// =============================================================
-//
-// Decisiones aplicadas:
-//   - Co-autoria: bridge_documento_autor con peso=1/N
-//   - Invitados: fila sentinel en dim_usuario (id_usuario_bk = 0)
-//   - Filtros de busqueda: FKs nullables por nivel (escuela/carrera/materia/tipo)
-//   - Granularidad area filtrada: 3 FKs separadas, una poblada por fila
-//   - Usuario-carrera: denormalizado en dim_usuario (SCD2)
-//   - SCD: SCD1 por default, SCD2 selectivo (id_materia en doc, id_carrera/id_rol en usuario)
-//   - Soft delete: dim_documento.is_deleted + deleted_at (SCD1)
-//   - Engagement social: fact_favorito (transaccional) + fact_comentario (evento + estado SCD1)
-// =============================================================
-
 Project buscasam_dwh {
   database_type: 'PostgreSQL'
   Note: '''
@@ -20,29 +7,23 @@ Project buscasam_dwh {
   '''
 }
 
-// Paleta (matchea entrega-header.tex):
-//   factcolor      #C8553D  -> tablas de hechos
-//   dimcolor       #3D5A80  -> dimensiones planas
-//   hierarchcolor  #6B8E4E  -> jerarquia snowflake
-//   unsamgray      #4A4A4A  -> bridge y control
-
 // ---------- JERARQUIA ACADEMICA (snowflake) ----------
 
 Table dim_escuela [headercolor: #6B8E4E] {
   id_escuela integer [pk]
-  nombre varchar(200) [not null, note: 'SCD1 - se pisa al renombrarse']
+  nombre varchar(200) [not null]
 }
 
 Table dim_carrera [headercolor: #6B8E4E] {
   id_carrera integer [pk]
   id_escuela integer [not null, ref: > dim_escuela.id_escuela]
-  nombre varchar(200) [not null, note: 'SCD1']
+  nombre varchar(200) [not null]
 }
 
 Table dim_materia [headercolor: #6B8E4E] {
   id_materia integer [pk]
   id_carrera integer [not null, ref: > dim_carrera.id_carrera]
-  nombre varchar(200) [not null, note: 'SCD1']
+  nombre varchar(200) [not null]
 }
 
 // ---------- TIEMPO ----------
@@ -63,10 +44,10 @@ Table dim_rol [headercolor: #3D5A80] {
 }
 
 Table dim_usuario [headercolor: #3D5A80] {
-  id_usuario_sk integer [pk, note: 'Surrogate key (necesaria por SCD2)']
-  id_usuario_bk integer [not null, note: 'Natural key del operativo. 0 = sentinel invitado anonimo']
-  id_rol integer [not null, ref: > dim_rol.id_rol, note: 'SCD2 - estudiante puede pasar a docente']
-  id_carrera integer [ref: > dim_carrera.id_carrera, note: 'Denormalizado, SCD2. NULL para invitados']
+  id_usuario_sk integer [pk]
+  id_usuario_bk integer [not null]
+  id_rol integer [not null, ref: > dim_rol.id_rol]
+  id_carrera integer [ref: > dim_carrera.id_carrera]
   nombre varchar(200)
   email_hash varchar(64)
   valid_from date [not null]
@@ -86,15 +67,15 @@ Table dim_tipo_documento [headercolor: #3D5A80] {
 }
 
 Table dim_documento [headercolor: #3D5A80] {
-  id_documento_sk integer [pk, note: 'Surrogate key (SCD2 por id_materia)']
-  id_documento_bk integer [not null, note: 'Natural key del operativo']
-  id_tipo integer [not null, ref: > dim_tipo_documento.id_tipo, note: 'SCD1']
-  id_materia integer [not null, ref: > dim_materia.id_materia, note: 'SCD2 - si cambia el area, importa historicamente']
+  id_documento_sk integer [pk]
+  id_documento_bk integer [not null]
+  id_tipo integer [not null, ref: > dim_tipo_documento.id_tipo]
+  id_materia integer [not null, ref: > dim_materia.id_materia]
   titulo varchar(500) [not null]
   fecha_alta date [not null]
-  visibilidad varchar(20) [not null, note: 'publico | interno | privado. SCD1']
-  is_deleted boolean [not null, default: false, note: 'Soft delete SCD1 - doc deja de aparecer en busqueda pero persiste en BD']
-  deleted_at date [note: 'NULL si nunca fue eliminado. Si se restaura, se vuelve a NULL']
+  visibilidad varchar(20) [not null, note: 'publico | interno | privado']
+  is_deleted boolean [not null, default: false]
+  deleted_at date
   valid_from date [not null]
   valid_to date
   is_current boolean [not null, default: true]
@@ -123,7 +104,7 @@ Table bridge_documento_autor [headercolor: #4A4A4A] {
 Table fact_busqueda [headercolor: #C8553D] {
   id_busqueda bigint [pk, increment]
   fecha date [not null, ref: > dim_tiempo.fecha]
-  id_usuario_sk integer [not null, ref: > dim_usuario.id_usuario_sk, note: 'Sentinel para invitados']
+  id_usuario_sk integer [not null, ref: > dim_usuario.id_usuario_sk]
 
   // Filtros aplicados (nullables - solo se llena el nivel filtrado)
   id_escuela_filtro integer [ref: > dim_escuela.id_escuela]
@@ -137,7 +118,7 @@ Table fact_busqueda [headercolor: #C8553D] {
   query_texto text [not null]
   cant_resultados integer [not null]
   hizo_click boolean [not null]
-  session_hash varchar(64) [note: 'Segmenta sesiones anonimas sin requerir dim_sesion']
+  session_hash varchar(64)
 
   indexes {
     fecha [name: 'idx_fact_busqueda_fecha']
@@ -193,7 +174,7 @@ Table fact_favorito [headercolor: #C8553D] {
   fecha date [not null, ref: > dim_tiempo.fecha]
   id_usuario_sk integer [not null, ref: > dim_usuario.id_usuario_sk]
   id_documento_sk integer [not null, ref: > dim_documento.id_documento_sk]
-  accion varchar(10) [not null, note: 'agregar | quitar. Transaccional - estado actual = ultima accion por (user, doc)']
+  accion varchar(10) [not null, note: 'agregar | quitar']
 
   indexes {
     fecha [name: 'idx_fact_favorito_fecha']
@@ -205,12 +186,12 @@ Table fact_favorito [headercolor: #C8553D] {
 // ---------- HECHO: COMENTARIO ----------
 
 Table fact_comentario [headercolor: #C8553D] {
-  id_comentario bigint [pk, note: 'PK del operativo - SCD1, no requiere surrogate']
+  id_comentario bigint [pk]
   fecha date [not null, ref: > dim_tiempo.fecha]
-  id_usuario_sk integer [not null, ref: > dim_usuario.id_usuario_sk, note: 'Solo usuarios registrados (spec: invitados no comentan)']
+  id_usuario_sk integer [not null, ref: > dim_usuario.id_usuario_sk, note: 'Solo usuarios registrados (invitados no comentan)']
   id_documento_sk integer [not null, ref: > dim_documento.id_documento_sk]
   id_comentario_padre bigint [ref: > fact_comentario.id_comentario, note: 'NULL = raiz. NOT NULL = respuesta (threading 1 nivel max)']
-  esta_oculto boolean [not null, default: false, note: 'SCD1 - se pisa al moderarse']
+  esta_oculto boolean [not null, default: false]
   fecha_oculto date [note: 'NULL si nunca fue moderado']
 
   indexes {
@@ -225,7 +206,7 @@ Table fact_comentario [headercolor: #C8553D] {
 
 Table etl_watermark [headercolor: #4A4A4A] {
   tabla_origen varchar(100) [pk, note: 'Tabla del operativo']
-  ultimo_procesado timestamp [not null, note: 'Max(created_at|updated_at) procesado']
+  ultimo_procesado timestamp [not null]
   ultima_corrida timestamp [not null]
 }
 
