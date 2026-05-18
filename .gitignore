@@ -2,6 +2,12 @@
 supabase/.temp/
 supabase/.branches/
 
+# Python (seed de Redis)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
 # Credenciales / variables de entorno
 .env
 .env.local
