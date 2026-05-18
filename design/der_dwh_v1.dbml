@@ -1,14 +1,3 @@
-// =============================================================
-//
-// Decisiones aplicadas:
-//   - Co-autoria: bridge_documento_autor con peso=1/N
-//   - Invitados: fila sentinel en dim_usuario (id_usuario_bk = 0)
-//   - Filtros de busqueda: FKs nullables por nivel (escuela/carrera/materia/tipo)
-//   - Granularidad area filtrada: 3 FKs separadas, una poblada por fila
-//   - Usuario-carrera: denormalizado en dim_usuario (SCD2)
-//   - SCD: SCD1 por default, SCD2 selectivo (id_materia en doc, id_carrera/id_rol en usuario)
-// =============================================================
-
 Project buscasam_dwh {
   database_type: 'PostgreSQL'
   Note: '''
@@ -17,12 +6,6 @@ Project buscasam_dwh {
     Carga incremental diaria via dbt + cron desde PostgreSQL operativo.
   '''
 }
-
-// Paleta (matchea entrega-header.tex):
-//   factcolor      #C8553D  -> tablas de hechos
-//   dimcolor       #3D5A80  -> dimensiones planas
-//   hierarchcolor  #6B8E4E  -> jerarquia snowflake
-//   unsamgray      #4A4A4A  -> bridge y control
 
 // ---------- JERARQUIA ACADEMICA (snowflake) ----------
 
