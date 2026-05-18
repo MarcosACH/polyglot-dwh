@@ -1,0 +1,20 @@
+services:
+  redis:
+    image: redis/redis-stack:latest
+    container_name: buscasam-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"   # Redis
+      - "8001:8001"   # RedisInsight (UI web)
+    volumes:
+      - redis-data:/data
+    environment:
+      REDIS_ARGS: "--appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data:

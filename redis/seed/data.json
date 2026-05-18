@@ -1,0 +1,86 @@
+{
+  "autocomplete": {
+    "key": "autocomplete:queries",
+    "queries": [
+      { "text": "redes neuronales", "score": 187 },
+      { "text": "redes neuronales convolucionales", "score": 142 },
+      { "text": "redes neuronales recurrentes", "score": 96 },
+      { "text": "redes sociales analisis", "score": 73 },
+      { "text": "redes complejas", "score": 41 },
+      { "text": "deep learning", "score": 168 },
+      { "text": "deep learning medicina", "score": 89 },
+      { "text": "deep learning vision por computadora", "score": 64 },
+      { "text": "machine learning supervisado", "score": 134 },
+      { "text": "machine learning no supervisado", "score": 92 },
+      { "text": "machine learning aplicado a salud", "score": 58 },
+      { "text": "aprendizaje por refuerzo", "score": 77 },
+      { "text": "procesamiento de lenguaje natural", "score": 156 },
+      { "text": "procesamiento de imagenes", "score": 88 },
+      { "text": "vision por computadora", "score": 121 },
+      { "text": "transformers nlp", "score": 103 },
+      { "text": "modelos de lenguaje grandes", "score": 95 },
+      { "text": "embeddings semanticos", "score": 67 },
+      { "text": "bases de datos relacionales", "score": 145 },
+      { "text": "bases de datos nosql", "score": 118 },
+      { "text": "bases de datos vectoriales", "score": 81 },
+      { "text": "postgresql tuning", "score": 54 },
+      { "text": "indices invertidos", "score": 38 },
+      { "text": "data warehouse modelado", "score": 71 },
+      { "text": "etl con dbt", "score": 49 },
+      { "text": "kimball vs inmon", "score": 32 },
+      { "text": "sistemas distribuidos", "score": 129 },
+      { "text": "tolerancia a fallos", "score": 47 },
+      { "text": "kubernetes en produccion", "score": 86 },
+      { "text": "microservicios patrones", "score": 74 },
+      { "text": "seguridad informatica", "score": 112 },
+      { "text": "criptografia aplicada", "score": 69 },
+      { "text": "autenticacion con jwt", "score": 83 },
+      { "text": "oauth2 flujos", "score": 51 },
+      { "text": "blockchain aplicaciones", "score": 65 },
+      { "text": "cambio climatico modelado", "score": 108 },
+      { "text": "calentamiento global", "score": 98 },
+      { "text": "energias renovables", "score": 76 },
+      { "text": "energia solar fotovoltaica", "score": 59 },
+      { "text": "biopolitica foucault", "score": 44 },
+      { "text": "filosofia de la ciencia", "score": 39 },
+      { "text": "historia argentina contemporanea", "score": 87 },
+      { "text": "economia del desarrollo", "score": 72 },
+      { "text": "politicas publicas educacion", "score": 66 },
+      { "text": "salud publica argentina", "score": 91 },
+      { "text": "epidemiologia covid", "score": 84 },
+      { "text": "nanotecnologia aplicaciones", "score": 53 },
+      { "text": "biotecnologia agricola", "score": 48 },
+      { "text": "ingenieria biomedica", "score": 62 },
+      { "text": "robotica educativa", "score": 35 }
+    ]
+  },
+  "sessions": {
+    "ttl_seconds": 3600,
+    "users": [
+      { "user_id": 1001, "session_id": "sess-ana-001",    "nombre": "Ana Garcia",     "rol": "estudiante", "carrera": "Ciencia de Datos" },
+      { "user_id": 1002, "session_id": "sess-bruno-002",  "nombre": "Bruno Lopez",    "rol": "estudiante", "carrera": "Sistemas" },
+      { "user_id": 1003, "session_id": "sess-carla-003",  "nombre": "Carla Mendez",   "rol": "docente",    "carrera": "Sociologia" },
+      { "user_id": 1004, "session_id": "sess-diego-004",  "nombre": "Diego Ruiz",     "rol": "docente",    "carrera": "Filosofia" },
+      { "user_id": 1005, "session_id": "sess-elena-005",  "nombre": "Elena Torres",   "rol": "estudiante", "carrera": "Ingenieria Biomedica" }
+    ]
+  },
+  "jwt_blacklist": {
+    "key_prefix": "jwt:blacklist:",
+    "revoked": [
+      {
+        "jti": "demo-jti-001",
+        "user_id": 1002,
+        "ttl_seconds": 1800,
+        "reason": "logout manual del usuario"
+      }
+    ]
+  },
+  "rate_limit": {
+    "key_prefix": "rl:",
+    "window_seconds": 60,
+    "limit_per_minute": 30,
+    "preloaded": [
+      { "user_id": 1002, "count": 28, "note": "usuario cerca del limite, util para demostrar el bloqueo en el proximo request" }
+    ]
+  }
+}
