@@ -382,12 +382,10 @@ CREATE TABLE dwh.fact_publicacion (
     id_publicacion  BIGSERIAL PRIMARY KEY,
     fecha           DATE    NOT NULL REFERENCES dwh.dim_tiempo(fecha),
     id_usuario_sk   INTEGER NOT NULL REFERENCES dwh.dim_usuario(id_usuario_sk),  -- uploader
-    id_documento_sk INTEGER NOT NULL REFERENCES dwh.dim_documento(id_documento_sk),
-    id_materia      INTEGER NOT NULL REFERENCES dwh.dim_materia(id_materia)
+    id_documento_sk INTEGER NOT NULL REFERENCES dwh.dim_documento(id_documento_sk)
 );
 
-CREATE INDEX idx_fact_publicacion_fecha   ON dwh.fact_publicacion(fecha);
-CREATE INDEX idx_fact_publicacion_materia ON dwh.fact_publicacion(id_materia);
+CREATE INDEX idx_fact_publicacion_fecha ON dwh.fact_publicacion(fecha);
 
 CREATE TABLE dwh.fact_descarga (
     id_descarga     BIGSERIAL PRIMARY KEY,
@@ -436,9 +434,9 @@ INSERT INTO dwh.fact_busqueda
     (fecha, id_usuario_sk, id_materia_filtro,
      query_texto, cant_resultados, hizo_click)
 VALUES
-    ('2026-05-04', 8102, 318, 'redes neuronales medicina', 27, TRUE),
-    ('2026-05-04', 8102, 318, 'deep learning diagnóstico', 19, TRUE),
-    ('2026-05-04', 5471,  45, 'foucault biopolitica',       8, FALSE);
+    ('2026-05-04', 1010, 45, 'redes neuronales medicina', 27, TRUE),
+    ('2026-05-04', 1010, 45, 'deep learning diagnóstico', 19, TRUE),
+    ('2026-05-04',  587, 78, 'foucault biopolitica',       8, FALSE);
 ```
 
 **ETL — Inserción**: el ETL guarda en una tabla de control (`dwh.etl_watermark`) la fecha/hora del último registro procesado por cada tabla. En cada corrida, **extrae** del PostgreSQL operativo solo las filas con `created_at > watermark` (carga incremental, mucho más liviana que una carga completa). **Transforma** cada fila: traduce IDs, normaliza textos, calcula campos derivados (por ejemplo `hizo_click` se deriva de si la búsqueda generó algún registro en la tabla de clicks del operativo) y **resuelve las claves subrogadas vigentes** para las dimensiones SCD2, buscando en `dim_usuario` y `dim_documento` la fila con `is_current = TRUE` que corresponde a la natural key del operativo. Para los documentos nuevos también recalcula `bridge_documento_autor` con `peso = 1/N` según la cantidad de co-autores. Finalmente, **carga** las filas en el DWH con un `INSERT` en bloque dentro de una transacción, lo que garantiza que si algo falla a mitad de la carga el datawarehouse queda en su estado anterior. Al terminar, actualiza el watermark con la fecha del último registro insertado, dejando todo listo para la corrida del día siguiente.
@@ -448,12 +446,12 @@ Las actualizaciones son raras en un datawarehouse, pero existen casos válidos: 
 
 ```sql
 UPDATE dwh.dim_carrera
-SET nombre = 'Licenciatura en Ciencias de Datos'
+SET nombre = 'Licenciatura en Ciencia de Datos'
 WHERE id_carrera = 27;
 
-UPDATE dwh.fact_publicacion
-SET id_materia = 412
-WHERE id_documento = 8891;
+UPDATE dwh.dim_documento
+SET visibilidad = 'publico'
+WHERE id_documento_bk = 8891 AND is_current;
 ```
 
 **ETL — Actualización**: el ETL detecta cambios en el PostgreSQL operativo comparando la columna `updated_at` de cada tabla contra el watermark. Cuando encuentra una fila modificada, decide cómo aplicarla según la política definida para ese campo:
@@ -485,16 +483,17 @@ SELECT
     t.cuatrimestre,
     count(*) AS total_publicaciones
 FROM dwh.fact_publicacion f
-JOIN dwh.dim_materia  m ON f.id_materia  = m.id_materia
-JOIN dwh.dim_carrera  c ON m.id_carrera  = c.id_carrera
-JOIN dwh.dim_escuela  e ON c.id_escuela  = e.id_escuela
-JOIN dwh.dim_tiempo   t ON f.fecha       = t.fecha
+JOIN dwh.dim_documento d ON f.id_documento_sk = d.id_documento_sk
+JOIN dwh.dim_materia   m ON d.id_materia      = m.id_materia
+JOIN dwh.dim_carrera   c ON m.id_carrera      = c.id_carrera
+JOIN dwh.dim_escuela   e ON c.id_escuela      = e.id_escuela
+JOIN dwh.dim_tiempo    t ON f.fecha           = t.fecha
 WHERE t.anio = 2026
 GROUP BY e.nombre, t.cuatrimestre
 ORDER BY e.nombre, t.cuatrimestre;
 ```
 
-Devuelve la cantidad de trabajos publicados por Escuela y por cuatrimestre durante 2026. Los `JOIN` en cascada recorren la jerarquía del copo de nieve (materia → carrera → escuela), y el `GROUP BY` agrega los hechos por las dos claves elegidas. PostgreSQL resuelve este tipo de consulta usando los índices de las claves foráneas y los planes de ejecución optimizados para joins en estrella/copo, devolviendo el resultado en tiempo aceptable para los volúmenes de BUSCASAM.
+Devuelve la cantidad de trabajos publicados por Escuela y por cuatrimestre durante 2026. Los `JOIN` en cascada recorren la jerarquía del copo de nieve (documento → materia → carrera → escuela), y el `GROUP BY` agrega los hechos por las dos claves elegidas. PostgreSQL resuelve este tipo de consulta usando los índices de las claves foráneas y los planes de ejecución optimizados para joins en estrella/copo, devolviendo el resultado en tiempo aceptable para los volúmenes de BUSCASAM.
 
 ## Minería de Datos
 
