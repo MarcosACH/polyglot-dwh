@@ -1,0 +1,29 @@
+# Supabase CLI - estado local generado automaticamente
+supabase/.temp/
+supabase/.branches/
+
+# Credenciales / variables de entorno
+.env
+.env.local
+.env.*.local
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Binarios y artefactos
+*.exe
+*.dll
+*.dylib
+*.so
+
+# Power BI temporales
+*.pbix.tmp
+~$*.pbix
+
+docs/consigna.md
