@@ -1,0 +1,214 @@
+Project buscasam_dwh {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Datawarehouse BUSCASAM - schema `dwh`.
+    Version recortada para alimentar el dashboard BI (4 elementos):
+      1. Publicaciones por Escuela/Carrera x Tipo de documento (heatmap)
+      2. Top 20 queries mas populares (Redis)
+      3. Top autores mas prolificos
+      4. Documentos mas vistos / favoriteados del periodo
+
+    Estrella desnormalizada (Kimball). Jerarquia Escuela > Carrera > Materia
+    aplanada en dim_materia. Interacciones consolidadas en fact_interaccion_documento.
+
+    DWH polyglot - carga diaria desde dos fuentes:
+      - PostgreSQL operativo -> dimensiones + fact_interaccion_documento
+      - Redis (sorted set autocomplete:queries) -> fact_query_popularity
+  '''
+}
+
+// =============================================================
+// DIMENSIONES
+// =============================================================
+
+// ---------- MATERIA (jerarquia desnormalizada) ----------
+// Jerarquia academica aplanada: Escuela > Carrera > Materia.
+// Evita JOINs al desnormalizar los tres niveles en una sola tabla.
+
+Table dim_materia [headercolor: #3D5A80] {
+  id_materia integer [pk]
+  nombre_materia varchar(200) [not null, note: 'Nombre de la materia tal como figura en el plan de estudios']
+  id_carrera integer [not null, note: 'FK logica a la carrera a la que pertenece la materia']
+  nombre_carrera varchar(200) [not null, note: 'Nombre de la carrera (desnormalizado para evitar JOIN)']
+  id_escuela integer [not null, note: 'FK logica a la escuela que contiene la carrera']
+  nombre_escuela varchar(200) [not null, note: 'Nombre de la escuela (desnormalizado para evitar JOIN)']
+
+  indexes {
+    id_escuela [name: 'idx_dim_materia_escuela']
+    id_carrera [name: 'idx_dim_materia_carrera']
+  }
+}
+
+// ---------- TIEMPO ----------
+// Calendario pre-poblado. Permite agrupar y filtrar hechos por periodos academicos.
+
+Table dim_tiempo [headercolor: #3D5A80] {
+  fecha date [pk, note: 'Fecha calendario (YYYY-MM-DD). Pre-poblada para todo el rango del DWH']
+  dia smallint [not null, note: 'Dia del mes (1-31)']
+  mes smallint [not null, note: 'Mes del anio (1-12)']
+  cuatrimestre smallint [not null, note: 'Cuatrimestre academico (1 = mar-jul, 2 = ago-dic, 0 = verano)']
+  anio smallint [not null, note: 'Anio calendario (ej: 2026)']
+}
+
+// ---------- USUARIO (SCD2) ----------
+
+Table dim_usuario [headercolor: #3D5A80] {
+  id_usuario_sk integer [pk, note: 'Surrogate key. Cambia con cada version SCD2 del usuario']
+  id_usuario_bk integer [not null, note: 'Business key del operativo. Usada por el bridge para no inflarse con versiones SCD2']
+  id_carrera integer [not null, note: 'Carrera en la que esta inscripto']
+  nombre_carrera varchar(200) [not null, note: 'Nombre de la carrera (desnormalizado para filtrar autores por carrera sin JOIN)']
+  nombre_escuela varchar(200) [not null, note: 'Escuela a la que pertenece la carrera (desnormalizado para filtrar autores por escuela sin JOIN)']
+  nombre varchar(200) [note: 'Nombre completo del usuario. Necesario para mostrar en el ranking de autores']
+  valid_from date [not null, note: 'Inicio de vigencia de esta version del registro (SCD2)']
+  valid_to date [note: 'Fin de vigencia. NULL = version vigente (SCD2)']
+  is_current boolean [not null, default: true, note: 'true = version activa. Facilita filtro sin comparar fechas']
+
+  indexes {
+    (id_usuario_bk, is_current) [name: 'idx_dim_usuario_bk_current']
+  }
+}
+
+// ---------- DOCUMENTO (SCD2) ----------
+
+Table dim_tipo_documento [headercolor: #3D5A80] {
+  id_tipo integer [pk]
+  nombre varchar(50) [not null, note: 'Categoria del documento: tesis | paper | trabajo_practico | proyecto_investigacion | monografia | ponencia | apunte | informe_catedra']
+}
+
+Table dim_documento [headercolor: #3D5A80] {
+  id_documento_sk integer [pk, note: 'Surrogate key. Cambia con cada version SCD2 del documento']
+  id_documento_bk integer [not null, note: 'Business key del operativo. Usada por el bridge para no inflarse con versiones SCD2']
+  id_tipo integer [not null, ref: > dim_tipo_documento.id_tipo, note: 'Tipo/categoria del documento']
+  id_materia integer [not null, ref: > dim_materia.id_materia, note: 'Materia a la que pertenece el documento']
+  titulo varchar(500) [not null, note: 'Titulo completo del documento. Necesario para mostrar en el top de mas vistos/favoriteados']
+  fecha_alta date [not null, note: 'Fecha en que el documento fue publicado por primera vez en la plataforma']
+  visibilidad varchar(20) [not null, note: 'Nivel de acceso: publico | interno | privado']
+  is_deleted boolean [not null, default: false, note: 'Soft delete. Filtrar en todos los elementos del dashboard']
+  deleted_at date [note: 'Fecha de eliminacion logica. NULL si no fue eliminado']
+  valid_from date [not null, note: 'Inicio de vigencia de esta version del registro (SCD2)']
+  valid_to date [note: 'Fin de vigencia. NULL = version vigente (SCD2)']
+  is_current boolean [not null, default: true, note: 'true = version activa. Facilita filtro sin comparar fechas']
+
+  indexes {
+    (id_documento_bk, is_current) [name: 'idx_dim_documento_bk_current']
+    (is_deleted, is_current) [name: 'idx_dim_documento_deleted_current']
+  }
+}
+
+// ---------- TIPO DE INTERACCION ----------
+// Solo se cargan los tipos consumidos por el dashboard.
+
+Table dim_tipo_interaccion [headercolor: #3D5A80] {
+  id_tipo_interaccion integer [pk]
+  nombre varchar(50) [not null, note: 'Accion sobre un documento. Valores cargados: publicacion | visualizacion | favorito_agregar']
+}
+
+
+
+// =============================================================
+// BRIDGE
+// =============================================================
+
+// Bridge documento <-> autor usando BUSINESS KEYS en ambos lados.
+// Asi no se duplica con cada nueva version SCD2 de documento o usuario.
+// Para queries: JOIN con dim_documento/dim_usuario filtrando is_current = true.
+
+Table bridge_documento_autor [headercolor: #4A4A4A] {
+  id_documento_bk integer [not null, note: 'Business key del documento']
+  id_usuario_bk integer [not null, note: 'Business key del autor']
+
+  indexes {
+    (id_documento_bk, id_usuario_bk) [pk]
+    id_usuario_bk [name: 'idx_bridge_autor']
+  }
+}
+
+// =============================================================
+// HECHOS
+// =============================================================
+
+// ---------- HECHO: INTERACCION CON DOCUMENTO (agregado diario) ----------
+// Fuente: PostgreSQL operativo.
+// Granularidad: una fila por (fecha, documento, tipo_interaccion).
+// El usuario no se guarda porque el dashboard no lo necesita y se aprovecha
+// la compresion: todas las visualizaciones/favoritos sobre un mismo doc
+// en un mismo dia colapsan en una fila.
+// Alimenta:
+//   - Heatmap Escuela x Tipo (filtrar por tipo = publicacion, JOIN a dim_documento -> dim_materia)
+//   - Top documentos mas vistos/favoriteados (filtrar por tipo IN (visualizacion, favorito_agregar))
+
+Table fact_interaccion_documento [headercolor: #C8553D] {
+  fecha date [not null, ref: > dim_tiempo.fecha, note: 'Dia en que ocurrieron las interacciones']
+  id_documento_sk integer [not null, ref: > dim_documento.id_documento_sk, note: 'Documento con el que se interactuo']
+  id_tipo_interaccion integer [not null, ref: > dim_tipo_interaccion.id_tipo_interaccion, note: 'Tipo de accion (publicacion / visualizacion / favorito_agregar)']
+
+  // Medidas
+  cant_interacciones integer [not null, default: 1, note: 'Total de eventos de ese tipo sobre ese documento ese dia, sumado entre todos los usuarios']
+
+  indexes {
+    (fecha, id_documento_sk, id_tipo_interaccion) [pk]
+    fecha [name: 'idx_fact_interaccion_fecha']
+    id_documento_sk [name: 'idx_fact_interaccion_doc']
+    id_tipo_interaccion [name: 'idx_fact_interaccion_tipo']
+  }
+}
+
+// ---------- HECHO: POPULARIDAD DE QUERIES (snapshot diario desde Redis) ----------
+// Fuente: Redis (sorted set `autocomplete:queries`).
+// Cada dia el ETL hace ZRANGE WITHSCORES sobre el top N y graba un snapshot.
+// Granularidad: una fila por (fecha, query_texto).
+// Alimenta:
+//   - Top 20 queries mas populares (snapshot mas reciente)
+//   - Evolucion de popularidad de una query en el tiempo
+
+Table fact_query_popularity [headercolor: #C8553D] {
+  fecha date [not null, ref: > dim_tiempo.fecha, note: 'Dia del snapshot diario']
+  query_texto text [not null, note: 'Subquery normalizada (lowercase, trim). Dimension degenerada']
+
+  // Medidas
+  score integer [not null, note: 'Score de popularidad acumulado al cierre del dia, leido del sorted set de Redis']
+  ranking smallint [not null, note: 'Posicion en el top del dia (1 = mas popular)']
+
+  indexes {
+    (fecha, query_texto) [pk]
+    (fecha, ranking) [name: 'idx_fact_query_pop_ranking']
+  }
+}
+
+
+
+// =============================================================
+// CONTROL ETL
+// =============================================================
+
+Table etl_watermark [headercolor: #4A4A4A] {
+  tabla_origen varchar(100) [pk, note: 'Nombre de la tabla del sistema operativo que se esta sincronizando']
+  ultimo_procesado timestamp [not null, note: 'Timestamp mas reciente de los registros ya cargados. Marca de agua para carga incremental']
+  ultima_corrida timestamp [not null, note: 'Fecha y hora en que se ejecuto por ultima vez el proceso ETL para esta tabla']
+}
+
+// =============================================================
+// TableGroups
+// =============================================================
+
+TableGroup hechos {
+  fact_interaccion_documento
+  fact_query_popularity
+}
+
+TableGroup dimensiones {
+  dim_tiempo
+  dim_materia
+  dim_usuario
+  dim_tipo_documento
+  dim_documento
+  dim_tipo_interaccion
+}
+
+TableGroup bridges {
+  bridge_documento_autor
+}
+
+TableGroup control {
+  etl_watermark
+}
