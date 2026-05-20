@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS dwh.dim_tiempo (
     anio         SMALLINT NOT NULL
 );
 
--- ---------- ROL Y USUARIO (SCD2) ----------
+-- ---------- ROL Y USUARIO ----------
 
 CREATE TABLE IF NOT EXISTS dwh.dim_rol (
     id_rol INTEGER PRIMARY KEY,
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS dwh.dim_usuario (
 CREATE INDEX IF NOT EXISTS idx_dim_usuario_bk_current
     ON dwh.dim_usuario(id_usuario_bk, is_current);
 
--- ---------- DOCUMENTO (SCD2, soft-delete) ----------
+-- ---------- DOCUMENTO ----------
 
 CREATE TABLE IF NOT EXISTS dwh.dim_tipo_documento (
     id_tipo INTEGER PRIMARY KEY,
