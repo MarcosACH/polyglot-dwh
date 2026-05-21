@@ -123,6 +123,12 @@ Table bridge_documento_autor [headercolor: #4A4A4A] {
   }
 }
 
+// Refs logicos del bridge sobre business keys (no son PKs de las dims SCD2).
+// Se declaran fuera de la tabla porque DBML no infiere FKs sobre columnas no-PK.
+// El JOIN real en queries filtra is_current = true sobre la dim correspondiente.
+Ref: bridge_documento_autor.id_documento_bk > dim_documento.id_documento_bk
+Ref: bridge_documento_autor.id_usuario_bk > dim_usuario.id_usuario_bk
+
 // =============================================================
 // HECHOS
 // =============================================================
