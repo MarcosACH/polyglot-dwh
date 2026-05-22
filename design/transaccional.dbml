@@ -1,0 +1,203 @@
+Project buscasam_dwh {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Datawarehouse BUSCASAM - schema `dwh`. Mart unico "uso y busqueda".
+
+    Patron C (atomico + agregado):
+      - fact_interaccion_atomico: fuente de verdad, grano = 1 evento.
+      - agg_interaccion_dia_documento: MV derivada, consumida por el dashboard.
+      - fact_query_popularity: snapshot diario desde Redis (ya viene pre-agregado).
+
+    Sin SCD2: las dimensiones reflejan el estado actual. Los cambios
+    historicos no se preservan en el DWH (decision de alcance del TPI).
+
+    Jerarquia Escuela > Carrera > Materia desnormalizada en dim_materia.
+  '''
+}
+
+// =============================================================
+// DIMENSIONES
+// =============================================================
+
+Table dim_tiempo [headercolor: #3D5A80] {
+  fecha date [pk, note: 'Fecha calendario (YYYY-MM-DD). Pre-poblada para todo el rango del DWH']
+  dia smallint [not null, note: 'Dia del mes (1-31)']
+  mes smallint [not null, note: 'Mes del anio (1-12)']
+  cuatrimestre smallint [not null, note: 'Cuatrimestre academico (1 = mar-jul, 2 = ago-dic, 0 = verano)']
+  anio smallint [not null, note: 'Anio calendario']
+}
+
+Table dim_materia [headercolor: #3D5A80] {
+  id_materia integer [pk]
+  nombre_materia varchar(200) [not null]
+  id_carrera integer [not null, note: 'FK logica al sistema operativo']
+  nombre_carrera varchar(200) [not null, note: 'Desnormalizado para evitar JOIN']
+  id_escuela integer [not null, note: 'FK logica al sistema operativo']
+  nombre_escuela varchar(200) [not null, note: 'Desnormalizado para evitar JOIN']
+
+  indexes {
+    id_escuela [name: 'idx_dim_materia_escuela']
+    id_carrera [name: 'idx_dim_materia_carrera']
+  }
+}
+
+Table dim_usuario [headercolor: #3D5A80] {
+  id_usuario integer [pk]
+  nombre varchar(200) [not null, note: 'Nombre completo del usuario (mostrar en ranking de autores)']
+  id_carrera integer [not null]
+  nombre_carrera varchar(200) [not null, note: 'Desnormalizado']
+  nombre_escuela varchar(200) [not null, note: 'Desnormalizado']
+}
+
+Table dim_tipo_documento [headercolor: #3D5A80] {
+  id_tipo integer [pk]
+  nombre varchar(50) [not null, note: 'tesis | paper | trabajo_practico | proyecto_investigacion | monografia | ponencia | apunte | informe_catedra']
+}
+
+Table dim_documento [headercolor: #3D5A80] {
+  id_documento integer [pk]
+  id_tipo integer [not null, ref: > dim_tipo_documento.id_tipo]
+  id_materia integer [not null, ref: > dim_materia.id_materia]
+  titulo varchar(500) [not null]
+  fecha_alta date [not null, note: 'Fecha de publicacion en la plataforma']
+  visibilidad varchar(20) [not null, note: 'publico | interno | privado']
+  is_deleted boolean [not null, default: false, note: 'Soft delete. Filtrar en el dashboard']
+  deleted_at date [note: 'NULL si no fue eliminado']
+
+  indexes {
+    (is_deleted) [name: 'idx_dim_documento_deleted']
+    (id_materia) [name: 'idx_dim_documento_materia']
+    (id_tipo) [name: 'idx_dim_documento_tipo']
+  }
+}
+
+Table dim_tipo_interaccion [headercolor: #3D5A80] {
+  id_tipo_interaccion integer [pk]
+  nombre varchar(50) [not null, note: 'publicacion | visualizacion | favorito_agregar | favorito_quitar | descarga | comentario']
+}
+
+// =============================================================
+// BRIDGE
+// =============================================================
+
+Table bridge_documento_autor [headercolor: #4A4A4A] {
+  id_documento integer [not null, ref: > dim_documento.id_documento]
+  id_usuario integer [not null, ref: > dim_usuario.id_usuario]
+  orden smallint [note: '1 = autor principal/uploader']
+
+  indexes {
+    (id_documento, id_usuario) [pk]
+    id_usuario [name: 'idx_bridge_autor']
+  }
+}
+
+// =============================================================
+// HECHOS
+// =============================================================
+
+// ---------- ATOMICO: fuente de verdad de interacciones ----------
+// Grano: 1 fila = 1 evento individual (visualizacion, favorito, etc.)
+// Preserva timestamp exacto + usuario que interactuo.
+// NO es consumido directo por el dashboard; alimenta la MV agregada.
+//
+// Coexisten `fecha` y `timestamp_evento`:
+//   - fecha: FK a dim_tiempo (grano dia) para JOIN con atributos calendario
+//     (cuatrimestre, anio) y particionado eficiente.
+//   - timestamp_evento: precision sub-diaria para drill-down, sesionizacion,
+//     analisis intra-dia (hora pico, secuencias de eventos).
+
+Table fact_interaccion_atomico [headercolor: #C8553D] {
+  id_interaccion bigint [pk, increment]
+  fecha date [not null, ref: > dim_tiempo.fecha, note: 'Dia del evento. FK a dim_tiempo para agregaciones por calendario']
+  timestamp_evento timestamp [not null, note: 'Timestamp exacto del evento. Para drill-down y analisis temporal fino']
+  id_documento integer [not null, ref: > dim_documento.id_documento]
+  id_usuario integer [not null, ref: > dim_usuario.id_usuario, note: 'Usuario que ejecuto la accion']
+  id_tipo_interaccion integer [not null, ref: > dim_tipo_interaccion.id_tipo_interaccion]
+
+  indexes {
+    fecha [name: 'idx_fact_int_atomico_fecha']
+    id_documento [name: 'idx_fact_int_atomico_doc']
+    id_usuario [name: 'idx_fact_int_atomico_user']
+    id_tipo_interaccion [name: 'idx_fact_int_atomico_tipo']
+    (fecha, id_documento, id_tipo_interaccion) [name: 'idx_fact_int_atomico_rollup']
+  }
+}
+
+// ---------- AGREGADO: vista materializada para el dashboard ----------
+// Derivada de fact_interaccion_atomico via:
+//   SELECT fecha, id_documento, id_tipo_interaccion, COUNT(*) AS cant_interacciones
+//   FROM fact_interaccion_atomico
+//   GROUP BY 1,2,3;
+// Refresh diario al cierre del ETL.
+// Grano: 1 fila por (fecha, documento, tipo_interaccion).
+
+Table agg_interaccion_dia_documento [headercolor: #E2A23B] {
+  fecha date [not null, ref: > dim_tiempo.fecha]
+  id_documento integer [not null, ref: > dim_documento.id_documento]
+  id_tipo_interaccion integer [not null, ref: > dim_tipo_interaccion.id_tipo_interaccion]
+  cant_interacciones integer [not null, note: 'COUNT(*) del atomico para esa combinacion']
+
+  indexes {
+    (fecha, id_documento, id_tipo_interaccion) [pk]
+    fecha [name: 'idx_agg_int_fecha']
+    id_documento [name: 'idx_agg_int_doc']
+    id_tipo_interaccion [name: 'idx_agg_int_tipo']
+  }
+}
+
+// ---------- POPULARIDAD DE QUERIES (snapshot Redis) ----------
+// Fuente: Redis sorted set `autocomplete:queries`. Ya viene pre-agregado
+// (Redis mantiene los counters). El ETL solo hace ZRANGE WITHSCORES diario.
+// Grano: 1 fila por (fecha, query_texto). query_texto es degenerate dim.
+
+Table fact_query_popularity [headercolor: #C8553D] {
+  fecha date [not null, ref: > dim_tiempo.fecha]
+  query_texto text [not null, note: 'Query normalizada (lowercase, trim). Dimension degenerada']
+  score integer [not null, note: 'Score del sorted set Redis al cierre del dia']
+  ranking smallint [not null, note: 'Posicion en el top del dia (1 = mas popular)']
+
+  indexes {
+    (fecha, query_texto) [pk]
+    (fecha, ranking) [name: 'idx_fact_query_pop_ranking']
+  }
+}
+
+// =============================================================
+// CONTROL ETL
+// =============================================================
+
+Table etl_watermark [headercolor: #4A4A4A] {
+  tabla_origen varchar(100) [pk, note: 'Tabla del sistema operativo o stream Redis']
+  ultimo_procesado timestamp [not null, note: 'Marca de agua para carga incremental']
+  ultima_corrida timestamp [not null]
+}
+
+// =============================================================
+// TableGroups
+// =============================================================
+
+TableGroup hechos_atomicos {
+  fact_interaccion_atomico
+}
+
+TableGroup hechos_agregados {
+  agg_interaccion_dia_documento
+  fact_query_popularity
+}
+
+TableGroup dimensiones {
+  dim_tiempo
+  dim_materia
+  dim_usuario
+  dim_tipo_documento
+  dim_documento
+  dim_tipo_interaccion
+}
+
+TableGroup bridges {
+  bridge_documento_autor
+}
+
+TableGroup control {
+  etl_watermark
+}
