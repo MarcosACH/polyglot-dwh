@@ -5,14 +5,16 @@ Project buscasam_dwh {
     Version recortada para alimentar el dashboard BI (4 elementos):
       1. Publicaciones por Escuela/Carrera x Tipo de documento (heatmap)
       2. Top 20 queries mas populares (Redis)
-      3. Top autores mas prolificos
+      3. Top autores mas prolificos (por impacto: views + favoritos)
       4. Documentos mas vistos / favoriteados del periodo
 
     Estrella desnormalizada (Kimball). Jerarquia Escuela > Carrera > Materia
-    aplanada en dim_materia. Interacciones consolidadas en fact_interaccion_documento.
+    aplanada en dim_materia. Dimensiones SCD1 (sobreescritura directa).
+    Interacciones sobre documentos en fact_interaccion_documento,
+    interacciones agregadas por autor en fact_interaccion_autor.
 
     DWH polyglot - carga diaria desde dos fuentes:
-      - PostgreSQL operativo -> dimensiones + fact_interaccion_documento
+      - PostgreSQL operativo -> dimensiones + fact_interaccion_documento + fact_interaccion_autor
       - Redis (sorted set autocomplete:queries) -> fact_query_popularity
   '''
 }
@@ -50,25 +52,19 @@ Table dim_tiempo [headercolor: #3D5A80] {
   anio smallint [not null, note: 'Anio calendario (ej: 2026)']
 }
 
-// ---------- USUARIO (SCD2) ----------
+// ---------- USUARIO (SCD1) ----------
+// Sobreescritura directa. El dashboard solo necesita el estado actual del usuario.
 
 Table dim_usuario [headercolor: #3D5A80] {
-  id_usuario_sk integer [pk, note: 'Surrogate key. Cambia con cada version SCD2 del usuario']
-  id_usuario_bk integer [not null, note: 'Business key del operativo. Usada por el bridge para no inflarse con versiones SCD2']
+  id_usuario integer [pk, note: 'Business key del operativo']
   id_carrera integer [not null, note: 'Carrera en la que esta inscripto']
   nombre_carrera varchar(200) [not null, note: 'Nombre de la carrera (desnormalizado para filtrar autores por carrera sin JOIN)']
   nombre_escuela varchar(200) [not null, note: 'Escuela a la que pertenece la carrera (desnormalizado para filtrar autores por escuela sin JOIN)']
   nombre varchar(200) [note: 'Nombre completo del usuario. Necesario para mostrar en el ranking de autores']
-  valid_from date [not null, note: 'Inicio de vigencia de esta version del registro (SCD2)']
-  valid_to date [note: 'Fin de vigencia. NULL = version vigente (SCD2)']
-  is_current boolean [not null, default: true, note: 'true = version activa. Facilita filtro sin comparar fechas']
-
-  indexes {
-    (id_usuario_bk, is_current) [name: 'idx_dim_usuario_bk_current']
-  }
 }
 
-// ---------- DOCUMENTO (SCD2) ----------
+// ---------- DOCUMENTO (SCD1) ----------
+// Sobreescritura directa. El dashboard solo necesita el estado actual del documento.
 
 Table dim_tipo_documento [headercolor: #3D5A80] {
   id_tipo integer [pk]
@@ -76,8 +72,7 @@ Table dim_tipo_documento [headercolor: #3D5A80] {
 }
 
 Table dim_documento [headercolor: #3D5A80] {
-  id_documento_sk integer [pk, note: 'Surrogate key. Cambia con cada version SCD2 del documento']
-  id_documento_bk integer [not null, note: 'Business key del operativo. Usada por el bridge para no inflarse con versiones SCD2']
+  id_documento integer [pk, note: 'Business key del operativo']
   id_tipo integer [not null, ref: > dim_tipo_documento.id_tipo, note: 'Tipo/categoria del documento']
   id_materia integer [not null, ref: > dim_materia.id_materia, note: 'Materia a la que pertenece el documento']
   titulo varchar(500) [not null, note: 'Titulo completo del documento. Necesario para mostrar en el top de mas vistos/favoriteados']
@@ -85,13 +80,9 @@ Table dim_documento [headercolor: #3D5A80] {
   visibilidad varchar(20) [not null, note: 'Nivel de acceso: publico | interno | privado']
   is_deleted boolean [not null, default: false, note: 'Soft delete. Filtrar en todos los elementos del dashboard']
   deleted_at date [note: 'Fecha de eliminacion logica. NULL si no fue eliminado']
-  valid_from date [not null, note: 'Inicio de vigencia de esta version del registro (SCD2)']
-  valid_to date [note: 'Fin de vigencia. NULL = version vigente (SCD2)']
-  is_current boolean [not null, default: true, note: 'true = version activa. Facilita filtro sin comparar fechas']
 
   indexes {
-    (id_documento_bk, is_current) [name: 'idx_dim_documento_bk_current']
-    (is_deleted, is_current) [name: 'idx_dim_documento_deleted_current']
+    is_deleted [name: 'idx_dim_documento_deleted']
   }
 }
 
@@ -105,29 +96,7 @@ Table dim_tipo_interaccion [headercolor: #3D5A80] {
 
 
 
-// =============================================================
-// BRIDGE
-// =============================================================
 
-// Bridge documento <-> autor usando BUSINESS KEYS en ambos lados.
-// Asi no se duplica con cada nueva version SCD2 de documento o usuario.
-// Para queries: JOIN con dim_documento/dim_usuario filtrando is_current = true.
-
-Table bridge_documento_autor [headercolor: #4A4A4A] {
-  id_documento_bk integer [not null, note: 'Business key del documento']
-  id_usuario_bk integer [not null, note: 'Business key del autor']
-
-  indexes {
-    (id_documento_bk, id_usuario_bk) [pk]
-    id_usuario_bk [name: 'idx_bridge_autor']
-  }
-}
-
-// Refs logicos del bridge sobre business keys (no son PKs de las dims SCD2).
-// Se declaran fuera de la tabla porque DBML no infiere FKs sobre columnas no-PK.
-// El JOIN real en queries filtra is_current = true sobre la dim correspondiente.
-Ref: bridge_documento_autor.id_documento_bk > dim_documento.id_documento_bk
-Ref: bridge_documento_autor.id_usuario_bk > dim_usuario.id_usuario_bk
 
 // =============================================================
 // HECHOS
@@ -145,17 +114,40 @@ Ref: bridge_documento_autor.id_usuario_bk > dim_usuario.id_usuario_bk
 
 Table fact_interaccion_documento [headercolor: #C8553D] {
   fecha date [not null, ref: > dim_tiempo.fecha, note: 'Dia en que ocurrieron las interacciones']
-  id_documento_sk integer [not null, ref: > dim_documento.id_documento_sk, note: 'Documento con el que se interactuo']
+  id_documento integer [not null, ref: > dim_documento.id_documento, note: 'Documento con el que se interactuo']
   id_tipo_interaccion integer [not null, ref: > dim_tipo_interaccion.id_tipo_interaccion, note: 'Tipo de accion (publicacion / visualizacion / favorito_agregar)']
 
   // Medidas
   cant_interacciones integer [not null, default: 1, note: 'Total de eventos de ese tipo sobre ese documento ese dia, sumado entre todos los usuarios']
 
   indexes {
-    (fecha, id_documento_sk, id_tipo_interaccion) [pk]
+    (fecha, id_documento, id_tipo_interaccion) [pk]
     fecha [name: 'idx_fact_interaccion_fecha']
-    id_documento_sk [name: 'idx_fact_interaccion_doc']
+    id_documento [name: 'idx_fact_interaccion_doc']
     id_tipo_interaccion [name: 'idx_fact_interaccion_tipo']
+  }
+}
+
+// ---------- HECHO: INTERACCION POR AUTOR (agregado diario) ----------
+// Fuente: PostgreSQL operativo (resolucion documento->autor(es) en el ETL).
+// Granularidad: una fila por (fecha, autor, tipo_interaccion).
+// El ETL agrega las interacciones de todos los documentos de un autor en un dia.
+// Alimenta:
+//   - Top autores mas prolificos por impacto (views + favoritos recibidos)
+//   - Top autores por cantidad de publicaciones (filtrar tipo = publicacion)
+
+Table fact_interaccion_autor [headercolor: #C8553D] {
+  fecha date [not null, ref: > dim_tiempo.fecha, note: 'Dia en que ocurrieron las interacciones']
+  id_usuario integer [not null, ref: > dim_usuario.id_usuario, note: 'Autor cuyos documentos recibieron las interacciones']
+  id_tipo_interaccion integer [not null, ref: > dim_tipo_interaccion.id_tipo_interaccion, note: 'Tipo de accion (publicacion / visualizacion / favorito_agregar)']
+
+  // Medidas
+  cant_interacciones integer [not null, default: 1, note: 'Total de eventos de ese tipo sobre los documentos del autor ese dia']
+
+  indexes {
+    (fecha, id_usuario, id_tipo_interaccion) [pk]
+    fecha [name: 'idx_fact_interaccion_autor_fecha']
+    id_usuario [name: 'idx_fact_interaccion_autor_usuario']
   }
 }
 
@@ -199,6 +191,7 @@ Table etl_watermark [headercolor: #4A4A4A] {
 
 TableGroup hechos {
   fact_interaccion_documento
+  fact_interaccion_autor
   fact_query_popularity
 }
 
@@ -209,10 +202,6 @@ TableGroup dimensiones {
   dim_tipo_documento
   dim_documento
   dim_tipo_interaccion
-}
-
-TableGroup bridges {
-  bridge_documento_autor
 }
 
 TableGroup control {
