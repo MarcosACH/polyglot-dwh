@@ -1,12 +1,12 @@
 # Dashboard BI — BUSCASAM
 
-Cuatro elementos de información que se exponen en Power BI, alimentados por el DWH `dwh` (PostgreSQL) con fuentes polyglot: **PostgreSQL operativo** (dimensiones + `fact_interaccion_documento`) y **Redis** (`fact_query_popularity`).
+Cuatro elementos de información que se exponen en Power BI, alimentados por el DWH `dwh` (PostgreSQL) con fuentes polyglot: **PostgreSQL operativo** (dimensiones + `fact_interaccion_documento` + `fact_interaccion_autor`) y **Redis** (`fact_query_popularity`).
 
 | # | Elemento | Fact que usa | Fuente |
 |---|---|---|---|
 | 1 | Heatmap Escuela/Carrera × Tipo de documento | — (`dim_documento`) | PostgreSQL operativo |
 | 2 | Top 20 queries más populares | `fact_query_popularity` | **Redis** |
-| 3 | Top 10 autores más prolíficos | — (`bridge_documento_autor`) | PostgreSQL operativo |
+| 3 | Top 10 autores más vistos | `fact_interaccion_autor` | PostgreSQL operativo |
 | 4 | Top 10 documentos más vistos/favoriteados (últimos 30 días) | `fact_interaccion_documento` | PostgreSQL operativo |
 
 ---
@@ -18,6 +18,8 @@ Cuatro elementos de información que se exponen en Power BI, alimentados por el 
 **Visualización:** Matrix / Heatmap.
 Filas = `nombre_escuela > nombre_carrera`, Columnas = `tipo_documento`, Valor = `cant_publicaciones`.
 
+**Nota de modelado:** es un conteo de catálogo (foto del estado actual, sin eje temporal), por lo que se cuenta directo sobre `dim_documento` filtrando `is_deleted = false`. No se usa el fact porque el evento `publicacion` persiste aunque el documento se borre, y como hay un solo evento de publicación por documento, `COUNT(*)` sobre la dimensión es equivalente y más simple.
+
 **Query:**
 ```sql
 SELECT
@@ -28,8 +30,7 @@ SELECT
 FROM dwh.dim_documento d
 JOIN dwh.dim_materia m         ON d.id_materia = m.id_materia
 JOIN dwh.dim_tipo_documento td ON d.id_tipo    = td.id_tipo
-WHERE d.is_current = true
-  AND d.is_deleted = false
+WHERE d.is_deleted = false
 GROUP BY m.nombre_escuela, m.nombre_carrera, td.nombre
 ORDER BY m.nombre_escuela, m.nombre_carrera, td.nombre;
 ```
@@ -63,11 +64,13 @@ ORDER BY fecha;
 
 ---
 
-## 3. Top 10 autores más prolíficos
+## 3. Top 10 autores más vistos
 
-**Pregunta:** ¿Quiénes son los referentes académicos de la facultad por volumen de producción?
+**Pregunta:** ¿Quiénes son los referentes académicos de la facultad por alcance de su producción?
 
-**Visualización:** Bar chart horizontal. Eje Y = autor, Eje X = `cant_publicaciones`. Slicer por `nombre_escuela`.
+**Visualización:** Bar chart horizontal. Eje Y = autor, Eje X = `visualizaciones`. Slicer por `nombre_escuela`.
+
+**Nota de modelado:** las visualizaciones se imputan al autor en `fact_interaccion_autor` (el ETL resuelve documento → autor(es) y agrega por día). Se rankea por visualizaciones recibidas, no por cantidad de publicaciones.
 
 **Query:**
 ```sql
@@ -75,17 +78,15 @@ SELECT
     u.nombre AS autor,
     u.nombre_escuela,
     u.nombre_carrera,
-    COUNT(DISTINCT b.id_documento_bk) AS cant_publicaciones
-FROM dwh.bridge_documento_autor b
+    SUM(f.cant_interacciones) AS visualizaciones
+FROM dwh.fact_interaccion_autor f
 JOIN dwh.dim_usuario u
-    ON b.id_usuario_bk = u.id_usuario_bk
-   AND u.is_current = true
-JOIN dwh.dim_documento d
-    ON b.id_documento_bk = d.id_documento_bk
-   AND d.is_current = true
-   AND d.is_deleted = false
+    ON f.id_usuario = u.id_usuario
+JOIN dwh.dim_tipo_interaccion ti
+    ON f.id_tipo_interaccion = ti.id_tipo_interaccion
+WHERE ti.nombre = 'visualizacion'
 GROUP BY u.nombre, u.nombre_escuela, u.nombre_carrera
-ORDER BY cant_publicaciones DESC
+ORDER BY visualizaciones DESC
 LIMIT 10;
 ```
 
@@ -101,16 +102,15 @@ LIMIT 10;
 ```sql
 WITH interaccion AS (
     SELECT
-        d.id_documento_bk,
+        f.id_documento,
         SUM(CASE WHEN ti.nombre = 'visualizacion'    THEN f.cant_interacciones ELSE 0 END) AS visualizaciones,
         SUM(CASE WHEN ti.nombre = 'favorito_agregar' THEN f.cant_interacciones ELSE 0 END) AS favoritos,
         SUM(f.cant_interacciones) AS total_interacciones
     FROM dwh.fact_interaccion_documento f
     JOIN dwh.dim_tipo_interaccion ti ON f.id_tipo_interaccion = ti.id_tipo_interaccion
-    JOIN dwh.dim_documento d         ON f.id_documento_sk = d.id_documento_sk
     WHERE ti.nombre IN ('visualizacion', 'favorito_agregar')
       AND f.fecha >= CURRENT_DATE - INTERVAL '30 days'
-    GROUP BY d.id_documento_bk
+    GROUP BY f.id_documento
 )
 SELECT
     d.titulo,
@@ -121,8 +121,7 @@ SELECT
     i.total_interacciones
 FROM interaccion i
 JOIN dwh.dim_documento d
-    ON i.id_documento_bk = d.id_documento_bk
-   AND d.is_current = true
+    ON i.id_documento = d.id_documento
    AND d.is_deleted = false
 JOIN dwh.dim_materia m ON d.id_materia = m.id_materia
 ORDER BY i.total_interacciones DESC
