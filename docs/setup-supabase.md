@@ -1,7 +1,9 @@
 # Setup Supabase - Guia operativa
 
-Esta guia describe como **desplegar y mantener** el DWH de BUSCASAM sobre Supabase.
-Cubre desde la instalacion de la CLI hasta el flujo diario de migraciones y carga de datos.
+Esta guia describe como **desplegar y correr** el DWH de BUSCASAM sobre Supabase:
+migraciones, carga del seed, demos CRUD (punto 4) y funciones de mineria (punto 5).
+
+Orden de despliegue: **migraciones -> seed -> demos / mineria**.
 
 ---
 
@@ -78,16 +80,18 @@ supabase db push
 
 ### Migrations incluidas
 
-| Archivo                                  | Contenido                                                 |
-|------------------------------------------|-----------------------------------------------------------|
-| `supabase/migrations/0001_dwh_schema.sql` | Schema `dwh` completo: 16 tablas + indices                |
-| `supabase/migrations/0002_dwh_functions.sql` | Funcion `predecir_descargas` (plpgsql, Supabase-compatible) |
+| Archivo                                   | Contenido                                                                       |
+|-------------------------------------------|---------------------------------------------------------------------------------|
+| `supabase/migrations/0001_dwh_schema.sql` | Schema `dwh`: 10 tablas (6 dimensiones + 3 hechos + `etl_watermark`) + indices  |
+| `supabase/migrations/0002_mineria.sql`    | Funciones de mineria: `segmentar_autores` y `predecir_interacciones_documento`  |
+
+El modelo es una **estrella desnormalizada (Kimball, SCD1)** con la jerarquia Escuela > Carrera > Materia aplanada en `dim_materia`. Es el DER de [`design/agregado.dbml`](../design/agregado.dbml).
 
 ---
 
 ## 4. Cargar datos sinteticos (seed)
 
-> **Importante**: `supabase db push` **NO** ejecuta `seed.sql`. La CLI solo lo corre automaticamente con `supabase db reset` (modo local). Para el remoto hay que cargarlo manualmente.
+> **Importante**: `supabase db push` **NO** ejecuta `seed.sql`. La CLI solo lo corre automaticamente con `supabase db reset` (modo local, ver seccion 7). Para el remoto hay que cargarlo manualmente.
 
 ### Opcion A - SQL Editor del dashboard (la mas simple)
 
@@ -103,44 +107,94 @@ psql "postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:
     -f supabase/seed.sql
 ```
 
+El seed usa `setseed(0.42)`, asi que es **reproducible**: cargarlo de nuevo (sobre una DB recien migrada) da siempre los mismos datos.
+
 ### Verificacion
 
 ```sql
 SELECT
-  (SELECT count(*) FROM dwh.dim_escuela)        AS escuelas,
-  (SELECT count(*) FROM dwh.dim_carrera)        AS carreras,
-  (SELECT count(*) FROM dwh.dim_materia)        AS materias,
-  (SELECT count(*) FROM dwh.dim_tiempo)         AS dias,
-  (SELECT count(*) FROM dwh.dim_usuario)        AS usuarios,
-  (SELECT count(*) FROM dwh.dim_documento)      AS documentos,
-  (SELECT count(*) FROM dwh.fact_busqueda)      AS busquedas,
-  (SELECT count(*) FROM dwh.fact_visualizacion) AS visualizaciones,
-  (SELECT count(*) FROM dwh.fact_publicacion)   AS publicaciones,
-  (SELECT count(*) FROM dwh.fact_descarga)      AS descargas,
-  (SELECT count(*) FROM dwh.fact_favorito)      AS favoritos,
-  (SELECT count(*) FROM dwh.fact_comentario)    AS comentarios;
+  (SELECT count(*) FROM dwh.dim_materia)                AS materias,
+  (SELECT count(*) FROM dwh.dim_tiempo)                 AS dias,
+  (SELECT count(*) FROM dwh.dim_usuario)                AS usuarios,
+  (SELECT count(*) FROM dwh.dim_documento)              AS documentos,
+  (SELECT count(*) FROM dwh.fact_interaccion_documento) AS interacciones_doc,
+  (SELECT count(*) FROM dwh.fact_interaccion_autor)     AS interacciones_autor,
+  (SELECT count(*) FROM dwh.fact_query_popularity)      AS query_popularity;
 ```
 
 Volumenes esperados:
 
-| Tabla                 | Filas  |
-|-----------------------|--------|
-| dim_escuela           | 5      |
-| dim_carrera           | 30     |
-| dim_materia           | 300    |
-| dim_tiempo            | 1096   |
-| dim_usuario           | 2051   |
-| dim_documento         | 5100   |
-| fact_busqueda         | 50000  |
-| fact_visualizacion    | 30000  |
-| fact_publicacion      | 5000   |
-| fact_descarga         | 10000  |
-| fact_favorito         | 8000   |
-| fact_comentario       | 4000   |
+| Tabla                        | Filas    | Notas                                         |
+|------------------------------|----------|-----------------------------------------------|
+| dim_materia                  | 300      | jerarquia Escuela/Carrera/Materia aplanada    |
+| dim_tiempo                   | 1096     | 2024-01-01 a 2026-12-31                       |
+| dim_usuario                  | 2000     | SCD1                                          |
+| dim_tipo_documento           | 8        |                                               |
+| dim_documento                | 5000     | SCD1, ~3% con `is_deleted = true`             |
+| dim_tipo_interaccion         | 3        | publicacion / visualizacion / favorito_agregar |
+| fact_interaccion_documento   | ~41021   | agregado por (fecha, doc, tipo)               |
+| fact_interaccion_autor       | ~56896   | agregado por (fecha, autor, tipo)             |
+| fact_query_popularity        | 13152    | 12 queries x 1096 dias (snapshot diario)      |
+| etl_watermark                | 7        |                                               |
+
+> Las dimensiones son exactas (formulas deterministas). Los hechos agregados pueden variar ligeramente segun como colapsan los eventos aleatorios, por eso van con `~`.
 
 ---
 
-## 5. Workflow: agregar una nueva migration
+## 5. Correr los demos CRUD (punto 4)
+
+Seis scripts ejecutables en `supabase/demos/` (Creacion, Eliminacion, Insercion, Actualizacion, Busqueda 1 clave, Busqueda 2 claves). Los demos 01-04 corren dentro de `BEGIN; ... ROLLBACK;` (no persisten nada); 05-06 son solo lectura.
+
+El detalle completo (configurar `.env`, cargar variables y ejecutar) esta en [`supabase/demos/README.md`](../supabase/demos/README.md). En resumen:
+
+```bash
+# con las variables PG* ya cargadas desde supabase/demos/.env
+psql -f supabase/demos/01_creacion.sql
+psql -f supabase/demos/02_eliminacion.sql
+psql -f supabase/demos/03_insercion.sql
+psql -f supabase/demos/04_actualizacion.sql
+psql -f supabase/demos/05_busqueda_1clave.sql
+psql -f supabase/demos/06_busqueda_2claves.sql
+```
+
+Requieren migraciones + seed ya cargados.
+
+---
+
+## 6. Mineria de datos (punto 5)
+
+Las dos funciones se despliegan con la migration `0002_mineria.sql` (paso 3). Explicacion y salida esperada en [`docs/mineria.md`](mineria.md).
+
+```sql
+-- 5.1 Segmentacion: autores en matriz volumen x impacto
+SELECT segmento, count(*)
+FROM   dwh.segmentar_autores()           -- params: (desde, hasta, escuela)
+GROUP  BY segmento ORDER BY 2 DESC;
+
+-- 5.2 Prediccion: forecast de visualizaciones de un documento (regresion lineal)
+SELECT * FROM dwh.predecir_interacciones_documento(1, 3);   -- doc 1, horizonte 3 meses
+```
+
+Los documentos 1 (creciente), 2 (decreciente) y 3 (estable) tienen una serie con tendencia inyectada en el seed para ilustrar la prediccion.
+
+El **dashboard BI (punto 6)** y sus 4 consultas estan documentados en [`docs/dashboard_bi.md`](dashboard_bi.md).
+
+---
+
+## 7. Alternativa: stack local con Docker
+
+Si preferis no tocar el remoto, la CLI levanta un Postgres local que **aplica migraciones y corre `seed.sql` automaticamente**:
+
+```powershell
+supabase start        # levanta el stack local (requiere Docker)
+supabase db reset     # recrea la DB: migraciones + seed.sql de una
+```
+
+`db reset` es la forma mas rapida de tener todo (esquema + datos + funciones) corriendo desde cero. La connection string local la imprime `supabase start`.
+
+---
+
+## 8. Workflow: agregar una nueva migration
 
 ```powershell
 # 1. Crear archivo vacio (genera supabase/migrations/<timestamp>_<nombre>.sql)
@@ -167,20 +221,6 @@ git push
 - **Una migration = un cambio logico**. Mas chicas son mas faciles de revertir y revisar.
 - **No editar migrations ya aplicadas en el remoto**. Si necesitas corregir algo, crea una nueva migration que arregle el problema.
 - Si la migration falla, el push aborta y la migration **no** queda marcada como aplicada. Se corrige el archivo y se vuelve a correr `supabase db push`.
-
----
-
-## 6. Funcion opcional: segmentacion de usuarios
-
-`supabase/optional/segmentar_usuarios_plpython.sql` implementa K-means sobre el perfil de uso de cada usuario. Requiere la extension `plpython3u`, **no disponible en Supabase Cloud**.
-
-Solo aplicable en una instancia self-hosted de PostgreSQL con `postgresql-plpython3-XX` y scikit-learn instalados. Para correrla:
-
-```bash
-psql "postgresql://<user>:<pass>@<host>:5432/<db>" -f supabase/optional/segmentar_usuarios_plpython.sql
-```
-
-Para el TP alcanza con `predecir_descargas` (que si esta desplegada en Supabase).
 
 ---
 
