@@ -8,7 +8,7 @@ Cada demo se corre con `psql` contra la misma DB de Supabase donde estan aplicad
 
 ## 1. Pre-requisitos
 
-- Migration aplicada (`supabase/migrations/0001_dwh_schema.sql`) y seed cargado (`supabase/seed.sql`). Ver [`docs/setup-supabase.md`](../../docs/setup-supabase.md).
+- Migration aplicada (`supabase/migrations/0001_dwh_schema.sql`) y seed cargado (`supabase/seed.sql`). Ver [`supabase/README.md`](../README.md).
 - `psql` instalado y la connection string del proyecto (Dashboard -> Project Settings -> Database -> Connection string URI).
 - Archivo `.env` completado con las credenciales del DWH (ver paso 3).
 
