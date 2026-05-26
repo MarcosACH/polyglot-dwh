@@ -5,9 +5,10 @@ Trabajo practico integrador de la materia Base de Datos.
 
 ## Contenido
 
-Este repositorio agrupa el diseno y el codigo de las dos demos del TP:
+Este repositorio agrupa el diseno y el codigo de las tres demos del TP:
 
 - **DWH relacional (PostgreSQL / Supabase)** — diseno dimensional en copo de nieve con jerarquia Escuela > Carrera > Materia, schema desplegable via migrations, seed sintetico reproducible, y funciones de mineria de datos (prediccion de descargas, segmentacion de usuarios).
+- **Busqueda vectorial (PostgreSQL + pgvector)** — indexacion semantica de documentos sobre Supabase con embeddings locales (sentence-transformers, `all-MiniLM-L6-v2`) y extraccion de texto de PDF.
 - **Demo NoSQL (Redis)** — instancia local en Docker con autocompletado del buscador (RediSearch), blacklist de JWT y rate limiting por usuario.
 - **Documentacion** academica y operativa.
 
@@ -28,21 +29,34 @@ Este repositorio agrupa el diseno y el codigo de las dos demos del TP:
 |-- README.md                  Este archivo
 |-- .gitignore
 |-- docs/
-|   |-- consigna.md            Consigna oficial del TP
 |   |-- spec.md                Especificacion funcional de BUSCASAM
-|   |-- entrega.md             Documento de entrega
-|   `-- setup-supabase.md      Guia operativa: Supabase + migrations + seed
+|   |-- mineria.md             Mineria de datos: funciones y salida esperada
+|   |-- dashboard_bi.md        Dashboard BI: las 4 consultas del punto 6
+|   `-- entrega.md             Documento de entrega
 |-- design/
-|   |-- der_dwh.dbml           DER vigente (copiar/pegar en dbdiagram.io)
-|   `-- der_dwh_v1.dbml        DER inicial (legacy, referencia historica)
+|   |-- agregado.dbml          DER vigente (copiar/pegar en dbdiagram.io)
+|   |-- agregado_design_decisions.md   Decisiones de diseno del modelo
+|   `-- desestimado/
+|       `-- transaccional.dbml   Modelo transaccional descartado (referencia)
 |-- supabase/
+|   |-- README.md              Guia operativa: Supabase + migrations + seed
 |   |-- config.toml            Config del proyecto Supabase
 |   |-- migrations/            Migrations versionadas (orden lexicografico)
 |   |   |-- 0001_dwh_schema.sql
-|   |   `-- 0002_dwh_functions.sql
+|   |   `-- 0002_mineria.sql
 |   |-- seed.sql               Carga de datos sinteticos reproducible
-|   `-- optional/
-|       `-- segmentar_usuarios_plpython.sql   Requiere plpython3u (self-hosted)
+|   `-- demos/                 Scripts CRUD ejecutables (punto 4)
+|       |-- README.md
+|       |-- 01_creacion.sql
+|       |-- 02_eliminacion.sql
+|       |-- 03_insercion.sql
+|       |-- 04_actualizacion.sql
+|       |-- 05_busqueda_1clave.sql
+|       `-- 06_busqueda_2claves.sql
+|-- supabase_vectorial/        Busqueda semantica con pgvector + embeddings
+|   |-- 01_creacion.sql        Extension pgvector + tabla vectorial.documentos
+|   |-- motor_vectorial.py     Embeddings (sentence-transformers) + extraccion PDF
+|   `-- main.py                Demo de indexacion y busqueda
 `-- redis/
     |-- README.md              Guia operativa: Docker + seed + demos
     |-- docker-compose.yml     Redis Stack + RedisInsight
@@ -51,6 +65,7 @@ Este repositorio agrupa el diseno y el codigo de las dos demos del TP:
     |   |-- seed.py
     |   `-- requirements.txt
     `-- demo/                  Paso a paso de cada caso de uso
+        |-- 00_presentacion.md
         |-- 01_autocomplete.md
         |-- 02_jwt_blacklist.md
         `-- 03_rate_limit.md
@@ -60,7 +75,7 @@ Este repositorio agrupa el diseno y el codigo de las dos demos del TP:
 
 ### DWH PostgreSQL (Supabase)
 
-Ver **[docs/setup-supabase.md](docs/setup-supabase.md)** para la guia paso a paso.
+Ver **[supabase/README.md](supabase/README.md)** para la guia paso a paso.
 
 Resumen para alguien que ya tiene la CLI instalada y el proyecto linkeado:
 
