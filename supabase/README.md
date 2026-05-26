@@ -145,7 +145,7 @@ Volumenes esperados:
 
 Seis scripts ejecutables en `supabase/demos/` (Creacion, Eliminacion, Insercion, Actualizacion, Busqueda 1 clave, Busqueda 2 claves). Los demos 01-04 corren dentro de `BEGIN; ... ROLLBACK;` (no persisten nada); 05-06 son solo lectura.
 
-El detalle completo (configurar `.env`, cargar variables y ejecutar) esta en [`supabase/demos/README.md`](../supabase/demos/README.md).
+El detalle completo (configurar `.env`, cargar variables y ejecutar) esta en [`supabase/demos/README.md`](demos/README.md).
 
 ### Conexion directa al remoto
 
@@ -181,7 +181,7 @@ Requieren migraciones + seed ya cargados.
 
 ## 6. Mineria de datos (punto 5)
 
-Las dos funciones se despliegan con la migration `0002_mineria.sql` (paso 3). Explicacion y salida esperada en [`docs/mineria.md`](mineria.md).
+Las dos funciones se despliegan con la migration `0002_mineria.sql` (paso 3). Explicacion y salida esperada en [`docs/mineria.md`](../docs/mineria.md).
 
 Las consultas (son solo lectura):
 
@@ -213,7 +213,7 @@ psql -h aws-1-<region>.pooler.supabase.com -p 5432 -U postgres.<ref> -d postgres
 
 Los documentos 1 (creciente), 2 (decreciente) y 3 (estable) tienen una serie con tendencia inyectada en el seed para ilustrar la prediccion.
 
-El **dashboard BI (punto 6)** y sus 4 consultas estan documentados en [`docs/dashboard_bi.md`](dashboard_bi.md).
+El **dashboard BI (punto 6)** y sus 4 consultas estan documentados en [`docs/dashboard_bi.md`](../docs/dashboard_bi.md).
 
 ---
 
