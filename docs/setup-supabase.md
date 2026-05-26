@@ -145,10 +145,28 @@ Volumenes esperados:
 
 Seis scripts ejecutables en `supabase/demos/` (Creacion, Eliminacion, Insercion, Actualizacion, Busqueda 1 clave, Busqueda 2 claves). Los demos 01-04 corren dentro de `BEGIN; ... ROLLBACK;` (no persisten nada); 05-06 son solo lectura.
 
-El detalle completo (configurar `.env`, cargar variables y ejecutar) esta en [`supabase/demos/README.md`](../supabase/demos/README.md). En resumen:
+El detalle completo (configurar `.env`, cargar variables y ejecutar) esta en [`supabase/demos/README.md`](../supabase/demos/README.md).
 
-```bash
-# con las variables PG* ya cargadas desde supabase/demos/.env
+### Conexion directa al remoto
+
+`localhost:5432` **no** funciona salvo que tengas el stack local corriendo (seccion 7). Para correr contra el remoto hay que usar la pooler connection string (Dashboard -> Project Settings -> Database, o `supabase/.temp/pooler-url` tras el `link`), en modo **session** (puerto 5432, apto para scripts `.sql`):
+
+```powershell
+# Setea la DB password solo para esta sesion de PowerShell (no la expone en el comando)
+$env:PGPASSWORD = "TU_PASSWORD"
+
+psql -h aws-1-<region>.pooler.supabase.com -p 5432 -U postgres.<ref> -d postgres `
+    -v ON_ERROR_STOP=1 -f supabase/demos/01_creacion.sql
+```
+
+- `$env:PGPASSWORD` lo lee `psql` automaticamente; vive solo en esa terminal. Limpiar al terminar con `$env:PGPASSWORD = $null`.
+- `-v ON_ERROR_STOP=1` aborta ante el primer error en vez de seguir.
+- Alternativa en una linea (la pass queda visible en el historial):
+  `psql "postgresql://postgres.<ref>:<password>@aws-1-<region>.pooler.supabase.com:5432/postgres" -f supabase/demos/01_creacion.sql`
+
+Los seis scripts:
+
+```powershell
 psql -f supabase/demos/01_creacion.sql
 psql -f supabase/demos/02_eliminacion.sql
 psql -f supabase/demos/03_insercion.sql
@@ -165,6 +183,8 @@ Requieren migraciones + seed ya cargados.
 
 Las dos funciones se despliegan con la migration `0002_mineria.sql` (paso 3). Explicacion y salida esperada en [`docs/mineria.md`](mineria.md).
 
+Las consultas (son solo lectura):
+
 ```sql
 -- 5.1 Segmentacion: autores en matriz volumen x impacto
 SELECT segmento, count(*)
@@ -173,6 +193,22 @@ GROUP  BY segmento ORDER BY 2 DESC;
 
 -- 5.2 Prediccion: forecast de visualizaciones de un documento (regresion lineal)
 SELECT * FROM dwh.predecir_interacciones_documento(1, 3);   -- doc 1, horizonte 3 meses
+```
+
+### Correr por psql desde tu maquina
+
+Con la misma conexion al remoto de la seccion 5 (pooler en modo session, `$env:PGPASSWORD` ya seteado), pasalas inline con `-c`:
+
+```powershell
+$env:PGPASSWORD = "TU_PASSWORD"
+
+# 5.1 Segmentacion
+psql -h aws-1-<region>.pooler.supabase.com -p 5432 -U postgres.<ref> -d postgres `
+    -c "SELECT segmento, count(*) FROM dwh.segmentar_autores() GROUP BY segmento ORDER BY 2 DESC;"
+
+# 5.2 Prediccion (doc 1, horizonte 3 meses)
+psql -h aws-1-<region>.pooler.supabase.com -p 5432 -U postgres.<ref> -d postgres `
+    -c "SELECT * FROM dwh.predecir_interacciones_documento(1, 3);"
 ```
 
 Los documentos 1 (creciente), 2 (decreciente) y 3 (estable) tienen una serie con tendencia inyectada en el seed para ilustrar la prediccion.
