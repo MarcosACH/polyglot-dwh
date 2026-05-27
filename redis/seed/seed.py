@@ -26,24 +26,80 @@ JWT_SECRET = "demo-secret-no-usar-en-produccion"  # solo para la demo
 DATA_FILE = Path(__file__).parent / "data.json"
 
 
+STOP_WORDS = {"de", "en", "la", "el", "a", "para", "con", "y", "o", "del", "al", "los", "las", "un", "una", "por", "como"}
+
+
+def extraer_subqueries_validas(texto: str) -> list[str]:
+    words = texto.strip().lower().split()
+    if not words:
+        return []
+    if len(words) == 1:
+        return [words[0]]
+    subqueries = []
+    for i in range(2, len(words) + 1):
+        last_word = words[i - 1]
+        if last_word not in STOP_WORDS:
+            subqueries.append(" ".join(words[:i]))
+    if not subqueries:
+        subqueries.append(" ".join(words))
+    return list(dict.fromkeys(subqueries))
+
+
 def connect() -> redis.Redis:
-    host = os.environ.get("REDIS_HOST", "localhost")
-    port = int(os.environ.get("REDIS_PORT", "6379"))
-    client = redis.Redis(host=host, port=port, decode_responses=True)
+    url = os.environ.get("REDIS_URL", "")
+    if url:
+        client = redis.Redis.from_url(url, decode_responses=True)
+        clean_url = url.split("@")[-1] if "@" in url else url
+        print(f"[ok] conectado a Redis via URL: {clean_url}")
+    else:
+        host = os.environ.get("REDIS_HOST", "localhost")
+        port = int(os.environ.get("REDIS_PORT", "6379"))
+        client = redis.Redis(host=host, port=port, decode_responses=True)
+        print(f"[ok] conectado a redis://{host}:{port}")
     client.ping()
-    print(f"[ok] conectado a redis://{host}:{port}")
     return client
 
 
 def seed_autocomplete(client: redis.Redis, cfg: dict) -> None:
     key = cfg["key"]
     client.delete(key)
-    pipe = client.pipeline()
+    
+    zset_key = "queries:popularity"
+    client.delete(zset_key)
+    
+    subquery_scores = {}
     for q in cfg["queries"]:
-        pipe.execute_command("FT.SUGADD", key, q["text"], q["score"])
+        text = q["text"].strip().lower()
+        score = int(q["score"])
+        subqs = extraer_subqueries_validas(text)
+        for subq in subqs:
+            subquery_scores[subq] = subquery_scores.get(subq, 0) + score
+            
+    # Verificar si el proveedor soporta RediSearch (FT.SUGADD)
+    redisearch_supported = True
+    try:
+        client.execute_command("FT.SUGADD", "temp:test:dict", "test", 1)
+        client.execute_command("FT.SUGDEL", "temp:test:dict", "test")
+    except redis.exceptions.ResponseError as e:
+        if "unknown command" in str(e).lower():
+            redisearch_supported = False
+            print("[warn] RediSearch no esta disponible en este servidor Redis (ej: Upstash).")
+            print("       Se omitira el autocompletado en RediSearch, pero se creara el ZSET para el ETL.")
+            
+    pipe = client.pipeline()
+    for subq, score in subquery_scores.items():
+        if redisearch_supported:
+            pipe.execute_command("FT.SUGADD", key, subq, score)
+        pipe.zadd(zset_key, {subq: score})
     pipe.execute()
-    total = client.execute_command("FT.SUGLEN", key)
-    print(f"[autocomplete] {total} sugerencias cargadas en '{key}'")
+    
+    if redisearch_supported:
+        total = client.execute_command("FT.SUGLEN", key)
+        print(f"[autocomplete] {total} sugerencias cargadas en RediSearch '{key}'")
+    else:
+        print(f"[autocomplete] Trie de autocompletado RediSearch OMITIDO (no soportado).")
+        
+    print(f"[autocomplete] {client.zcard(zset_key)} queries cargadas en el ZSET '{zset_key}'")
 
 
 def seed_sessions(client: redis.Redis, cfg: dict) -> None:
