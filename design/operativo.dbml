@@ -1,0 +1,268 @@
+Project buscasam_operativo {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Base de datos operativa BUSCASAM — schema `operativo`.
+    OLTP normalizada (3NF) que alimenta al DWH via ETL diario.
+
+    Incluye motor de busqueda integrado:
+      - pgvector (embeddings) para busqueda semantica
+      - tsvector para busqueda lexica (BM25)
+
+    12 tablas:
+      - Jerarquia academica: escuela, carrera, materia
+      - Usuarios: usuario
+      - Documentos: tipo_documento, documento, documento_autor
+      - Interacciones: favorito, evento_visualizacion, descarga, comentario, busqueda
+
+    El ETL diario extrae datos de este schema y los transforma
+    al modelo dimensional del DWH (schema `dwh`).
+    Las queries populares se obtienen de Redis, no de este schema.
+  '''
+}
+
+// =============================================================
+// JERARQUIA ACADEMICA (normalizada — 3 tablas)
+// =============================================================
+// En el DWH esto se aplana en una sola dim_materia (Kimball).
+// En el operativo se mantiene normalizado para evitar anomalias
+// de actualizacion y garantizar integridad referencial.
+
+Table escuela [headercolor: #2D6A4F] {
+  id         integer [pk, increment, note: 'PK autoincremental']
+  nombre     varchar(200) [not null, note: 'Nombre oficial de la escuela (ej: Escuela de Ciencia y Tecnologia)']
+  created_at timestamptz [not null, default: `now()`, note: 'Fecha de creacion del registro']
+  updated_at timestamptz [not null, default: `now()`, note: 'Ultima modificacion. Usado por el ETL para detectar cambios']
+}
+
+Table carrera [headercolor: #2D6A4F] {
+  id         integer [pk, increment]
+  id_escuela integer [not null, ref: > escuela.id, note: 'Escuela a la que pertenece la carrera']
+  nombre     varchar(200) [not null, note: 'Nombre de la carrera (ej: Ingenieria en Informatica)']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    id_escuela [name: 'idx_carrera_escuela']
+  }
+}
+
+Table materia [headercolor: #2D6A4F] {
+  id         integer [pk, increment]
+  id_carrera integer [not null, ref: > carrera.id, note: 'Carrera a la que pertenece la materia']
+  nombre     varchar(200) [not null, note: 'Nombre de la materia (ej: Algebra Lineal)']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    id_carrera [name: 'idx_materia_carrera']
+  }
+}
+
+// =============================================================
+// USUARIOS
+// =============================================================
+// Solo usuarios registrados (estudiantes y docentes).
+// Los invitados navegan sin login y no tienen fila aqui.
+// Sus visualizaciones, descargas y busquedas se registran con id_usuario = NULL.
+// El ETL mapea NULL al sentinel id=0 ("Invitado Anonimo") en el DWH.
+
+Table usuario [headercolor: #3D5A80] {
+  id         integer [pk, increment]
+  email      varchar(255) [not null, unique, note: 'Email institucional UNSAM. Validacion por regex en DDL']
+  nombre     varchar(200) [not null, note: 'Nombre completo del usuario']
+  rol        varchar(20)  [not null, note: 'estudiante | docente. CHECK constraint en SQL']
+  id_carrera integer [ref: > carrera.id, note: 'Nullable. Docentes pueden no tener carrera fija']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`, note: 'ETL usa este campo para detectar cambios de rol o carrera (SCD2 en el DWH)']
+
+  indexes {
+    id_carrera [name: 'idx_usuario_carrera', note: 'Evita sequential scan durante deletes en carrera']
+  }
+}
+
+// =============================================================
+// DOCUMENTOS (con motor de busqueda vectorial integrado)
+// =============================================================
+
+Table tipo_documento [headercolor: #5A189A] {
+  id     integer [pk, increment]
+  nombre varchar(50) [not null, unique, note: 'tesis | paper | trabajo_practico | proyecto_investigacion | monografia | ponencia | apunte | informe_catedra']
+}
+
+Table documento [headercolor: #5A189A] {
+  id              integer [pk, increment]
+  titulo          varchar(500) [not null, note: 'Titulo completo del documento']
+  abstract        text [note: 'Resumen del documento. Auto-extraido o ingresado por el autor']
+  texto_completo  text [note: 'Texto extraido del PDF/DOCX via OCR/parser. Usado para indexacion']
+  visibilidad     varchar(20) [not null, note: 'publico | interno | privado. CHECK constraint en SQL']
+  id_tipo         integer [not null, ref: > tipo_documento.id, note: 'Tipo/categoria del documento']
+  id_materia      integer [not null, ref: > materia.id, note: 'Materia a la que pertenece']
+  id_uploader     integer [not null, ref: > usuario.id, note: 'Usuario que creo la entrada en la plataforma']
+  archivo_url     text [note: 'URL al archivo en Supabase Storage o filesystem']
+
+  // --- Motor de busqueda vectorial (pgvector) ---
+  embedding       "vector(384)" [note: 'Embedding del modelo all-MiniLM-L6-v2. Indice HNSW para busqueda por similitud coseno']
+
+  // --- Motor de busqueda lexica (tsvector) ---
+  texto_busqueda  tsvector [note: 'Columna generada automaticamente. Indice GIN para busqueda por palabras']
+
+  deleted_at      timestamptz [note: 'Soft delete. NULL = activo. El ETL mapea a dim_documento.is_deleted en el DWH']
+  created_at      timestamptz [not null, default: `now()`, note: 'Fecha de publicacion. El ETL la usa como evento de tipo "publicacion"']
+  updated_at      timestamptz [not null, default: `now()`, note: 'ETL usa este campo para detectar cambios (SCD1/SCD2 en el DWH)']
+
+  indexes {
+    id_materia  [name: 'idx_documento_materia_activo', note: 'Indice parcial: WHERE deleted_at IS NULL']
+    id_tipo     [name: 'idx_documento_tipo_activo', note: 'Indice parcial: WHERE deleted_at IS NULL']
+    id_uploader [name: 'idx_documento_uploader']
+  }
+
+  Note: '''
+    Indices especiales (no representables en DBML):
+    - HNSW en embedding (vector_cosine_ops) — busqueda semantica
+    - GIN en texto_busqueda — busqueda lexica
+  '''
+}
+
+// ---------- CO-AUTORIA ----------
+// Relacion N:M entre documentos y usuarios registrados.
+
+Table documento_autor [headercolor: #5A189A] {
+  id_documento integer [not null, ref: > documento.id, note: 'Documento co-autorado']
+  id_usuario   integer [not null, ref: > usuario.id, note: 'Autor registrado']
+  orden        smallint [not null, note: '1 = autor principal / uploader']
+
+  indexes {
+    (id_documento, id_usuario) [pk]
+    id_usuario [name: 'idx_doc_autor_usuario']
+  }
+}
+
+// =============================================================
+// INTERACCIONES Y EVENTOS (alimentan fact tables del DWH)
+// =============================================================
+
+// ---------- FAVORITOS ----------
+// Toggle de favoritos del usuario (estado activo).
+Table favorito [headercolor: #C8553D] {
+  id_usuario   integer [not null, ref: > usuario.id, note: 'Usuario que marco el favorito']
+  id_documento integer [not null, ref: > documento.id, note: 'Documento marcado']
+  created_at   timestamptz [not null, default: `now()`, note: 'Momento de la accion']
+
+  indexes {
+    (id_usuario, id_documento) [pk]
+    id_documento [name: 'idx_favorito_documento']
+  }
+}
+
+// ---------- EVENTO DE VISUALIZACION ----------
+// Log de aperturas de la pagina de detalle de un documento.
+// id_usuario nullable: NULL = invitado anonimo.
+Table evento_visualizacion [headercolor: #C8553D] {
+  id           bigint [pk, increment, note: 'BIGSERIAL para alto volumen']
+  id_usuario   integer [ref: > usuario.id, note: 'NULL = invitado anonimo']
+  id_documento integer [not null, ref: > documento.id, note: 'Documento visto']
+  created_at   timestamptz [not null, default: `now()`, note: 'Timestamp de la visualizacion']
+
+  indexes {
+    created_at   [name: 'idx_evento_vis_created']
+    id_documento [name: 'idx_evento_vis_documento']
+    id_usuario   [name: 'idx_evento_vis_usuario']
+  }
+}
+
+// ---------- EVENTO DE DESCARGA ----------
+// Log de descargas de archivos adjuntos/PDF.
+// id_usuario nullable: NULL = invitado anonimo.
+Table descarga [headercolor: #C8553D] {
+  id           bigint [pk, increment, note: 'BIGSERIAL para alto volumen']
+  id_usuario   integer [ref: > usuario.id, note: 'NULL = invitado anonimo']
+  id_documento integer [not null, ref: > documento.id, note: 'Documento descargado']
+  created_at   timestamptz [not null, default: `now()`, note: 'Timestamp de la descarga']
+
+  indexes {
+    created_at   [name: 'idx_descarga_created']
+    id_documento [name: 'idx_descarga_documento']
+    id_usuario   [name: 'idx_descarga_usuario']
+  }
+}
+
+// ---------- COMENTARIO ----------
+// Comentarios en documentos con moderacion reactiva.
+// Solo usuarios registrados comentan.
+Table comentario [headercolor: #C8553D] {
+  id                  bigint [pk, increment, note: 'BIGSERIAL para comentarios']
+  id_usuario          integer [not null, ref: > usuario.id, note: 'Usuario que comento']
+  id_documento        integer [not null, ref: > documento.id, note: 'Documento comentado']
+  id_comentario_padre bigint [ref: > comentario.id, note: 'NULL = comentario raiz, NOT NULL = respuesta (hilo 1 nivel)']
+  texto               text [not null, note: 'Texto de la publicacion (max 2000 caracteres por CHECK constraint)']
+  esta_oculto         boolean [not null, default: false, note: 'Ocultado por moderacion']
+  fecha_oculto        timestamptz [note: 'Momento en que fue ocultado']
+  created_at          timestamptz [not null, default: `now()`]
+  updated_at          timestamptz [not null, default: `now()`]
+
+  indexes {
+    created_at          [name: 'idx_comentario_created']
+    id_documento        [name: 'idx_comentario_documento']
+    id_usuario          [name: 'idx_comentario_usuario']
+    id_comentario_padre [name: 'idx_comentario_padre']
+  }
+}
+
+// ---------- BUSQUEDA ----------
+// Historial de consultas y filtros de busqueda aplicados.
+// id_usuario nullable: NULL = invitado anonimo.
+Table busqueda [headercolor: #C8553D] {
+  id                       bigint [pk, increment, note: 'BIGSERIAL para alto volumen']
+  id_usuario               integer [ref: > usuario.id, note: 'NULL = invitado anonimo']
+  query_texto              text [not null, note: 'Termino buscado por el usuario (max 255 caracteres por CHECK constraint)']
+  
+  // Filtros
+  id_escuela_filtro        integer [ref: > escuela.id, note: 'Filtro por escuela']
+  id_carrera_filtro        integer [ref: > carrera.id, note: 'Filtro por carrera']
+  id_materia_filtro        integer [ref: > materia.id, note: 'Filtro por materia']
+  id_tipo_documento_filtro integer [ref: > tipo_documento.id, note: 'Filtro por tipo de documento']
+  fecha_desde_filtro       date [note: 'Filtro temporal desde']
+  fecha_hasta_filtro       date [note: 'Filtro temporal hasta']
+
+  cant_resultados          integer [not null, default: 0, note: 'Resultados arrojados por la busqueda']
+  hizo_click               boolean [not null, default: false, note: 'TRUE si visito algun link resultado']
+  session_hash             varchar(64) [note: 'Agrupamiento de queries por session']
+  created_at               timestamptz [not null, default: `now()`, note: 'Momento de la busqueda']
+
+  indexes {
+    created_at               [name: 'idx_busqueda_created']
+    id_usuario               [name: 'idx_busqueda_usuario']
+    id_materia_filtro        [name: 'idx_busqueda_materia']
+    id_escuela_filtro        [name: 'idx_busqueda_escuela_filtro']
+    id_carrera_filtro        [name: 'idx_busqueda_carrera_filtro']
+    id_tipo_documento_filtro [name: 'idx_busqueda_tipo_filtro']
+  }
+}
+
+// =============================================================
+// TABLE GROUPS
+// =============================================================
+
+TableGroup jerarquia_academica {
+  escuela
+  carrera
+  materia
+}
+
+TableGroup usuarios {
+  usuario
+}
+
+TableGroup documentos {
+  tipo_documento
+  documento
+  documento_autor
+}
+
+TableGroup interacciones {
+  favorito
+  evento_visualizacion
+  descarga
+  comentario
+  busqueda
+}
