@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-import motor_vectorial_operativo as mv
+import motor as mv
 
 # 1. Configurar entorno y ocultar warnings
 load_dotenv()

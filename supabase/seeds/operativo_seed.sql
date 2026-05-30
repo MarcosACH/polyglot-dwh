@@ -205,6 +205,27 @@ FROM generate_series(1, 30000) i;
 
 SELECT setval('operativo.evento_visualizacion_id_seq', (SELECT max(id) FROM operativo.evento_visualizacion));
 
+-- ---------- tendencia showcase para la demo de prediccion (docs 1, 2, 3) ----------
+-- Inyecta visualizaciones con una serie MENSUAL marcada para que, tras el ETL,
+-- dwh.predecir_interacciones_documento muestre una tendencia clara por documento:
+--   doc 1 -> creciente (6..41), doc 2 -> decreciente (41..6), doc 3 -> estable (22).
+-- Una fila por evento (1 visualizacion) el dia 15 de cada mes; id por default (BIGSERIAL,
+-- ya seteado por el setval de arriba). El ETL las agrega por (dia, doc) y la funcion de
+-- prediccion arma la serie mensual y ajusta la recta. Sin esto, las visualizaciones del
+-- seed son uniformes en el tiempo y la regresion da pendiente ~ 0.
+INSERT INTO operativo.evento_visualizacion (id_usuario, id_documento, created_at)
+SELECT
+    ((doc.id_documento * 53 + n) % 2000) + 1,
+    doc.id_documento,
+    (g.gm + INTERVAL '14 days') + (n % 24) * INTERVAL '1 hour'
+FROM generate_series('2024-01-01'::date, '2026-12-01'::date, '1 month') WITH ORDINALITY AS g(gm, ord)
+CROSS JOIN (VALUES
+    (1,  6,  1),    -- creciente
+    (2, 41, -1),    -- decreciente
+    (3, 22,  0)     -- estable
+) AS doc(id_documento, base, slope)
+CROSS JOIN LATERAL generate_series(1, GREATEST(doc.base + doc.slope * (g.ord - 1), 1)) AS n;
+
 -- ---------- descarga (10000) ----------
 INSERT INTO operativo.descarga (id, id_usuario, id_documento, created_at)
 SELECT

@@ -3,8 +3,7 @@
 -- Kimball Star Schema con jerarquia Escuela > Carrera > Materia aplanada.
 -- =============================================================
 
-DROP SCHEMA IF EXISTS dwh CASCADE;
-CREATE SCHEMA dwh;
+CREATE SCHEMA IF NOT EXISTS dwh;
 
 -- ---------- JERARQUIA ACADEMICA (dim_materia) ----------
 CREATE TABLE IF NOT EXISTS dwh.dim_materia (

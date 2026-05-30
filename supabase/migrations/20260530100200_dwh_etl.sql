@@ -32,18 +32,19 @@ BEGIN
     -- UPSERT: Si el ID ya existe, actualiza el valor con el que se intento insertar (EXCLUDED). Garantiza que el script sea idempotente.
     ON CONFLICT (id_tipo_interaccion) DO UPDATE SET nombre = EXCLUDED.nombre;
     
-    -- Poblado de la dimension tiempo si esta vacia (2024-01-01 a 2026-12-31)
-    IF NOT EXISTS (SELECT 1 FROM dwh.dim_tiempo LIMIT 1) THEN
-        INSERT INTO dwh.dim_tiempo (fecha, dia, mes, cuatrimestre, anio)
-        SELECT
-            d::date,
-            EXTRACT(DAY   FROM d)::smallint,
-            EXTRACT(MONTH FROM d)::smallint,
-            CASE WHEN EXTRACT(MONTH FROM d) <= 7 THEN 1 ELSE 2 END::smallint,
-            EXTRACT(YEAR  FROM d)::smallint
-        -- generate_series crea un conjunto de filas dinamico, una por cada dia. Forma eficiente en Postgres para poblar la tabla de tiempo sin bucles.
-        FROM generate_series('2024-01-01'::date, '2026-12-31'::date, '1 day'::interval) d;
-    END IF;
+    -- Poblado/extension de la dimension tiempo (idempotente, desde 2024-01-01 hasta hoy + 1 mes).
+    -- Se corre en cada ejecucion: garantiza que la fecha de la corrida actual exista en
+    -- dim_tiempo antes de cargar fact_query_popularity, que la referencia por FK. Evita que
+    -- el ETL diario rompa cuando la fecha de hoy supera un rango fijo (bug del 2027).
+    INSERT INTO dwh.dim_tiempo (fecha, dia, mes, cuatrimestre, anio)
+    SELECT
+        d::date,
+        EXTRACT(DAY   FROM d)::smallint,
+        EXTRACT(MONTH FROM d)::smallint,
+        CASE WHEN EXTRACT(MONTH FROM d) <= 7 THEN 1 ELSE 2 END::smallint,
+        EXTRACT(YEAR  FROM d)::smallint
+    FROM generate_series('2024-01-01'::date, (CURRENT_DATE + INTERVAL '1 month')::date, '1 day'::interval) d
+    ON CONFLICT (fecha) DO NOTHING;
 
     -- Usuario sentinel para busquedas e interacciones anonimas
     INSERT INTO dwh.dim_usuario (id_usuario, id_carrera, nombre_carrera, nombre_escuela, nombre) VALUES
