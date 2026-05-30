@@ -30,10 +30,10 @@ pip install -r requirements.txt
 ```
 
 ### B. Configuración de Variables de Entorno
-Creen un archivo `.env` en la raíz del proyecto (este archivo está excluido en git y no se subirá) con las siguientes credenciales de Supabase y Redis Cloud:
+Copien `.env.example` (en la raíz) a `.env` (gitignored, no se sube) y completen con las credenciales reales de Supabase y Redis Cloud.
 ```env
-DATABASE_URL="postgresql://postgres.btqloorotiyyputoervr:iMOC1gzHxwdkKMPl@aws-1-us-east-1.pooler.supabase.com:5432/postgres"
-REDIS_URL="redis://default:Hehk2m1BSTKs2VRvTNKKJOSkM7o6vVMl@fast-hole-macrofast-11509.db.redis.io:13631"
+DATABASE_URL="postgresql://postgres.<project-ref>:<password>@aws-<n>-<region>.pooler.supabase.com:5432/postgres"
+REDIS_URL="redis://default:<password>@<host>:<port>"
 ```
 
 ---
