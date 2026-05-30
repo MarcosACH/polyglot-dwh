@@ -50,7 +50,7 @@ def execute_redis_etl():
         r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
         r.ping()
         
-        # Ocultar contrasenas de la impresion en consola por seguridad
+        # Ocultar contraseñas de la impresion en consola por seguridad
         clean_redis_url = REDIS_URL.split("@")[-1] if "@" in REDIS_URL else REDIS_URL
         print(f"Conectado a Redis: {clean_redis_url}")
     except Exception as e:
