@@ -1,7 +1,7 @@
     # Decisiones de Diseño — Data Warehouse Buscasam
 
 > [!NOTE]
-> Este documento resume las decisiones de diseño tomadas sobre el DWH de Buscasam, definido en "design/agregado.dbml".
+> Este documento resume las decisiones de diseño tomadas sobre el DWH de Buscasam, definido en "design/dwh.dbml".
 
 ---
 

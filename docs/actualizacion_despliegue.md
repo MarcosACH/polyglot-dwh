@@ -6,28 +6,28 @@ Este documento resume los cambios realizados en el repositorio para desplegar la
 
 ## 1. Cambios en la Estructura del Proyecto
 
-* **Nueva automatización local:** Se creó el script [supabase/setup_and_seed.py](file:///home/nicolas/UNSAM/Bases%20de%20datos/tpi-bases-de-datos/supabase/setup_and_seed.py). Este script ejecuta en un solo comando:
-  1. La aplicación de las migraciones pendientes en Supabase (`0003` y `0004`).
-  2. La limpieza (`TRUNCATE`) completa de los esquemas `dwh` y `operativo` para garantizar idempotencia.
-  3. La siembra de datos transaccionales con `operativo_seed.sql` en Supabase.
-  4. La siembra del diccionario de autocompletado y métricas NoSQL en **Redis Cloud**.
-  5. La ejecución de prueba del ETL completo (`run_etl.py`).
-* **Renombrado de carpeta Redis local:** Se renombró la carpeta `redis/` a [no_se_usa_local_redis/](file:///home/nicolas/UNSAM/Bases%20de%20datos/tpi-bases-de-datos/no_se_usa_local_redis/) para evitar confusiones, ya que el motor Redis productivo corre en **Redis Cloud**. El script de semillas interno `seed.py` se sigue utilizando para poblar la nube.
-* **Migración en el Motor Vectorial:**
-  * Se desestimó `motor_vectorial.py` (movido a `supabase_vectorial/desestimado/`).
-  * Se creó [motor_vectorial_operativo.py](file:///home/nicolas/UNSAM/Bases%20de%20datos/tpi-bases-de-datos/supabase_vectorial/motor_vectorial_operativo.py), que interactúa con la tabla transaccional final `operativo.documento` e inserta los autores principales en la tabla relacional `operativo.documento_autor`.
-  * Se actualizó `supabase_vectorial/main.py` para utilizar el nuevo motor con la estructura relacional obligatoria (`id_uploader` y `visibilidad`).
+* **Bootstrap de datos:** El script [`etl/bootstrap.py`](../etl/bootstrap.py) carga los datos del Flujo A en un solo comando. Las migraciones se aplican aparte con `supabase db push` (enfoque CLI-native). El script ejecuta:
+  1. La limpieza (`TRUNCATE`) completa de los esquemas `dwh` y `operativo` para garantizar idempotencia.
+  2. La siembra de datos transaccionales con `supabase/seeds/operativo_seed.sql`.
+  3. La siembra del diccionario de autocompletado y métricas NoSQL en **Redis Cloud**.
+  4. La ejecución del ETL completo ([`etl/run_etl.py`](../etl/run_etl.py)).
+* **Carpeta Redis:** La demo Redis vive en [`nosql/`](../nosql/) (instancia local en Docker, opcional). El motor productivo corre en **Redis Cloud**; el seed `nosql/seed/seed.py` se sigue utilizando para poblar la nube.
+* **Motor Vectorial (`search/`):**
+  * Se desestimó el motor viejo (movido a `search/desestimado/motor_vectorial.py`).
+  * [`search/motor.py`](../search/motor.py) interactúa con la tabla transaccional `operativo.documento` e inserta el autor principal en `operativo.documento_autor`.
+  * [`search/main.py`](../search/main.py) usa el nuevo motor con la estructura relacional obligatoria (`id_uploader` y `visibilidad`).
 
 ---
 
 ## 2. Instrucciones para el Equipo
 
 ### A. Configuración de Dependencias
-Para correr los scripts en sus máquinas locales, deben instalar las librerías del proyecto usando el nuevo [requirements.txt](file:///home/nicolas/UNSAM/Bases%20de%20datos/tpi-bases-de-datos/requirements.txt) en la raíz:
+Las dependencias estan separadas por componente. Para el ETL:
 ```bash
-# Activar su entorno virtual e instalar dependencias
-pip install -r requirements.txt
+# Activar su entorno virtual e instalar dependencias del ETL
+pip install -r etl/requirements.txt
 ```
+(El motor vectorial usa `search/requirements.txt` y la demo Redis `nosql/seed/requirements.txt`.)
 
 ### B. Configuración de Variables de Entorno
 Copien `.env.example` (en la raíz) a `.env` (gitignored, no se sube) y completen con las credenciales reales de Supabase y Redis Cloud.

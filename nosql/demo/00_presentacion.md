@@ -9,7 +9,7 @@
 Ya levantado y seedeado. Verificar:
 
 ```bash
-cd redis
+cd nosql
 docker compose ps              # buscasam-redis (healthy)
 docker compose exec redis redis-cli DBSIZE   # -> 8
 ```

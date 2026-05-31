@@ -1,6 +1,6 @@
 # Minería de Datos — BUSCASAM
 
-Dos funciones dinámicas sobre el DWH `dwh`, implementadas en **SQL nativo de PostgreSQL** (sin extensiones de ML). Se definen en [`supabase/migrations/0002_mineria.sql`](../supabase/migrations/0002_mineria.sql). Son *dinámicas* porque recalculan sobre los datos actuales del DWH según los parámetros que reciben.
+Dos funciones dinámicas sobre el DWH `dwh`, implementadas en **SQL nativo de PostgreSQL** (sin extensiones de ML). Se definen en [`supabase/migrations/20260530100300_dwh_mineria.sql`](../supabase/migrations/20260530100300_dwh_mineria.sql). Son *dinámicas* porque recalculan sobre los datos actuales del DWH según los parámetros que reciben.
 
 | # | Técnica | Función | Fact que usa |
 |---|---|---|---|
