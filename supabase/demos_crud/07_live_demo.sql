@@ -18,22 +18,20 @@ VALUES (999, 1, 'Carrera Demo', NOW(), NOW());
 INSERT INTO operativo.materia (id, id_carrera, nombre, created_at, updated_at) 
 VALUES (9999, 999, 'Demo SQL en Vivo', NOW(), NOW());
 
--- 2. Insertar un documento (paper) en esta materia (creado hace 2 meses)
+-- 2. Insertar un documento (paper) en esta materia (creado en el momento de la demo)
 INSERT INTO operativo.documento (id, titulo, abstract, texto_completo, visibilidad, id_tipo, id_materia, id_uploader, archivo_url, created_at, updated_at)
-VALUES (9999, 'Investigación SQL en la Nube', 'Abstract de demo', 'Contenido completo', 'publico', 2, 9999, 1, 'url', NOW() - INTERVAL '2 months', NOW() - INTERVAL '2 months');
+VALUES (9999, 'Investigación SQL en la Nube', 'Abstract de demo', 'Contenido completo', 'publico', 2, 9999, 1, 'url', NOW(), NOW());
 
--- 3. Simular visualizaciones para los últimos 3 meses (2 -> 4 -> 6)
+-- 3. Simular 50 visualizaciones al nuevo documento en el momento de la demo
 INSERT INTO operativo.evento_visualizacion (id_usuario, id_documento, created_at)
-SELECT 1, 9999, NOW() - INTERVAL '2 months' FROM generate_series(1, 2);
-
-INSERT INTO operativo.evento_visualizacion (id_usuario, id_documento, created_at)
-SELECT 1, 9999, NOW() - INTERVAL '1 month' FROM generate_series(1, 4);
-
-INSERT INTO operativo.evento_visualizacion (id_usuario, id_documento, created_at)
-SELECT 1, 9999, NOW() FROM generate_series(1, 6);
+SELECT 1, 9999, NOW() FROM generate_series(1, 50);
 
 
 -- >>> NOTA: Asegurarse de insertar nuevos datos en Redis y correr el ETL (GitHub actions) antes de continuar con la Fase 3.
+-- Comandos Redis: 
+-- Autocomplete: FT.SUGGET autocomplete:queries "rede" MAX 5
+--               FT.SUGGET autocomplete:queries "machn" MAX 5
+-- Query Popularity: ZADD queries:popularity 500 "busqueda redis demo en vivo"
 
 
 --  3: Verificación Post-ETL en el DWH
@@ -67,8 +65,8 @@ LIMIT 5;
 -- 1. Segmentación de autores
 SELECT segmento, count(*) FROM dwh.segmentar_autores() GROUP BY segmento;
 
--- 2. Predicción a 3 meses para el nuevo documento (ID 9999)
-SELECT * FROM dwh.predecir_interacciones_documento(9999, 3);
+-- 2. Predicción a 3 meses para el documento con tendencia creciente (ID 1)
+SELECT * FROM dwh.predecir_interacciones_documento(2, 3);
 
 
 -- SCRIPT DE LIMPIEZA (Ejecutar al finalizar la demo para dejar la DB limpia)
@@ -80,3 +78,5 @@ DELETE FROM operativo.carrera WHERE id = 999;
 DELETE FROM dwh.fact_interaccion_documento WHERE id_documento = 9999;
 DELETE FROM dwh.dim_documento WHERE id_documento = 9999;
 DELETE FROM dwh.dim_materia WHERE id_materia = 9999;
+
+-- Para el dato generado de Redis: ZREM queries:popularity "busqueda redis demo en vivo"
