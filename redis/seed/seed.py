@@ -1,7 +1,8 @@
 """Carga datos sinteticos en Redis para la demo de BUSCASAM.
 
-Popula cuatro estructuras:
+Popula cinco estructuras:
   - autocomplete:queries     suggestion dict de RediSearch (FT.SUGADD)
+  - queries:popularity     zset con popularidad de queries (ZADD)
   - session:<sid>            hash con datos del usuario logueado (HSET + EXPIRE)
   - jwt:blacklist:<jti>      flag de revocacion con TTL (SET ... EX)
   - rl:<user_id>:<minuto>    contador de rate limit (INCR + EXPIRE)

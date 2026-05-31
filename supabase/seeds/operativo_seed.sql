@@ -132,10 +132,10 @@ SELECT
     'https://storage.buscasam.unsam.edu.ar/documentos/' || i || '.pdf',
     operativo.generar_mock_vector(i),
     CASE WHEN (i * 41) % 100 < 3
-         THEN ('2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day') + ((i * 19) % 200) * INTERVAL '1 day'
+         THEN ('2024-01-01'::timestamptz + ((i * 17) % 800) * INTERVAL '1 day') + ((i * 19) % 80) * INTERVAL '1 day'
          ELSE NULL END,
-    '2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day',
-    '2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day'
+    '2024-01-01'::timestamptz + ((i * 17) % 800) * INTERVAL '1 day',
+    '2024-01-01'::timestamptz + ((i * 17) % 800) * INTERVAL '1 day'
 FROM generate_series(1, 5000) i;
 
 -- Eliminar la funcion auxiliar temporal
@@ -187,8 +187,8 @@ ON CONFLICT (id_documento, id_usuario) DO NOTHING;
 INSERT INTO operativo.favorito (id_usuario, id_documento, created_at)
 SELECT
     ((i * 73) % 2000) + 1,
-    ((i * 109) % 5000) + 1,
-    '2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day'
+    (floor(power(random(), 2) * 4997))::int + 4,
+    '2024-01-01'::timestamptz + ((i * 17) % 880) * INTERVAL '1 day'
 FROM generate_series(1, 4000) i
 ON CONFLICT (id_usuario, id_documento) DO NOTHING;
 
@@ -199,8 +199,8 @@ SELECT
     CASE WHEN (i * 31) % 100 < 10 THEN NULL -- 10% invitados anonimos
          ELSE ((i * 73) % 2000) + 1
     END,
-    ((i * 127) % 5000) + 1,
-    '2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day' + ((i * 7) % 24) * INTERVAL '1 hour'
+    (floor(power(random(), 2) * 4997))::int + 4,
+    '2024-01-01'::timestamptz + ((i * 17) % 880) * INTERVAL '1 day' + ((i * 7) % 24) * INTERVAL '1 hour'
 FROM generate_series(1, 30000) i;
 
 SELECT setval('operativo.evento_visualizacion_id_seq', (SELECT max(id) FROM operativo.evento_visualizacion));
@@ -218,7 +218,7 @@ SELECT
     ((doc.id_documento * 53 + n) % 2000) + 1,
     doc.id_documento,
     (g.gm + INTERVAL '14 days') + (n % 24) * INTERVAL '1 hour'
-FROM generate_series('2024-01-01'::date, '2026-12-01'::date, '1 month') WITH ORDINALITY AS g(gm, ord)
+FROM generate_series('2024-01-01'::date, '2026-05-01'::date, '1 month') WITH ORDINALITY AS g(gm, ord)
 CROSS JOIN (VALUES
     (1,  6,  1),    -- creciente
     (2, 41, -1),    -- decreciente
@@ -233,8 +233,8 @@ SELECT
     CASE WHEN (i * 13) % 100 < 10 THEN NULL -- 10% invitados anonimos
          ELSE ((i * 73) % 2000) + 1
     END,
-    ((i * 127) % 5000) + 1,
-    '2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day' + ((i * 7) % 24) * INTERVAL '1 hour'
+    (floor(power(random(), 2) * 4997))::int + 4,
+    '2024-01-01'::timestamptz + ((i * 17) % 880) * INTERVAL '1 day' + ((i * 7) % 24) * INTERVAL '1 hour'
 FROM generate_series(1, 10000) i;
 
 SELECT setval('operativo.descarga_id_seq', (SELECT max(id) FROM operativo.descarga));
@@ -245,15 +245,15 @@ INSERT INTO operativo.comentario (id, id_usuario, id_documento, id_comentario_pa
 SELECT
     i,
     ((i * 47) % 2000) + 1,
-    ((i * 89) % 5000) + 1,
+    (floor(power(random(), 2) * 4997))::int + 4,
     NULL,
     'Comentario de prueba numero ' || i || ' sobre este valioso documento. Interesante punto de vista.',
     (i * 113) % 100 < 2, -- ~2% moderados/ocultados
     CASE WHEN (i * 113) % 100 < 2
-         THEN ('2024-01-01'::timestamptz + ((i * 271) % 900) * INTERVAL '1 day') + 5 * INTERVAL '1 day'
+         THEN ('2024-01-01'::timestamptz + ((i * 271) % 870) * INTERVAL '1 day') + 5 * INTERVAL '1 day'
          ELSE NULL END,
-    '2024-01-01'::timestamptz + ((i * 271) % 900) * INTERVAL '1 day',
-    '2024-01-01'::timestamptz + ((i * 271) % 900) * INTERVAL '1 day'
+    '2024-01-01'::timestamptz + ((i * 271) % 870) * INTERVAL '1 day',
+    '2024-01-01'::timestamptz + ((i * 271) % 870) * INTERVAL '1 day'
 FROM generate_series(1, 3000) i;
 
 -- Respuestas (id 3001..4000)
@@ -261,13 +261,13 @@ INSERT INTO operativo.comentario (id, id_usuario, id_documento, id_comentario_pa
 SELECT
     3000 + i,
     ((i * 59) % 2000) + 1,
-    ((i * 89) % 5000) + 1,
+    (floor(power(random(), 2) * 4997))::int + 4,
     ((i * 17) % 3000) + 1, -- referenciar un comentario raiz 1..3000
     'Respuesta de prueba numero ' || (3000 + i) || ' al comentario. Coincido con tu apreciacion del tema.',
     FALSE,
     NULL,
-    '2024-01-01'::timestamptz + ((i * 311) % 900) * INTERVAL '1 day',
-    '2024-01-01'::timestamptz + ((i * 311) % 900) * INTERVAL '1 day'
+    '2024-01-01'::timestamptz + ((i * 311) % 880) * INTERVAL '1 day',
+    '2024-01-01'::timestamptz + ((i * 311) % 880) * INTERVAL '1 day'
 FROM generate_series(1, 1000) i;
 
 SELECT setval('operativo.comentario_id_seq', (SELECT max(id) FROM operativo.comentario));
@@ -298,7 +298,7 @@ SELECT
     ((i * 19) % 50),
     (i * 23) % 100 < 65,
     md5('session' || ((i * 3) % 10000)),
-    '2024-01-01'::timestamptz + ((i * 17) % 1095) * INTERVAL '1 day' + ((i * 5) % 24) * INTERVAL '1 hour'
+    '2024-01-01'::timestamptz + ((i * 17) % 880) * INTERVAL '1 day' + ((i * 5) % 24) * INTERVAL '1 hour'
 FROM generate_series(1, 50000) i;
 
 SELECT setval('operativo.busqueda_id_seq', (SELECT max(id) FROM operativo.busqueda));

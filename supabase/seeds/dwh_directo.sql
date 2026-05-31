@@ -141,8 +141,8 @@ INSERT INTO dwh.fact_interaccion_documento
 SELECT fecha, id_documento, 2, COUNT(*)
 FROM (
     SELECT
-        '2024-01-01'::date + (random() * 1095)::int AS fecha,
-        (random() * 4999)::int + 1                  AS id_documento
+        '2024-01-01'::date + (random() * 880)::int AS fecha,
+        (floor(power(random(), 2) * 4997))::int + 4 AS id_documento
     FROM generate_series(1, 30000)
 ) v
 GROUP BY fecha, id_documento;
@@ -153,8 +153,8 @@ INSERT INTO dwh.fact_interaccion_documento
 SELECT fecha, id_documento, 3, COUNT(*)
 FROM (
     SELECT
-        '2024-01-01'::date + (random() * 1095)::int AS fecha,
-        (random() * 4999)::int + 1                  AS id_documento
+        '2024-01-01'::date + (random() * 880)::int AS fecha,
+        (floor(power(random(), 2) * 4997))::int + 4 AS id_documento
     FROM generate_series(1, 8000)
     WHERE random() < 0.75
 ) f
@@ -173,7 +173,7 @@ SELECT
     doc.id_documento,
     2,
     doc.base + doc.slope * (g.ord - 1)::int
-FROM generate_series('2024-01-01'::date, '2026-12-01'::date, '1 month') WITH ORDINALITY AS g(gm, ord)
+FROM generate_series('2024-01-01'::date, '2026-05-01'::date, '1 month') WITH ORDINALITY AS g(gm, ord)
 CROSS JOIN (VALUES
     (1,  6,  1),    -- creciente
     (2, 41, -1),    -- decreciente

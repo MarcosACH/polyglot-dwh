@@ -3,7 +3,9 @@
 --  1: Pre-chequeo (DWH debe estar vacío para estos datos)
 
 SELECT * FROM dwh.dim_materia WHERE nombre_materia = 'Demo SQL en Vivo';
+
 SELECT * FROM dwh.fact_interaccion_documento WHERE id_documento = 9999;
+
 SELECT * FROM dwh.fact_query_popularity WHERE query_texto = 'busqueda redis demo en vivo';
 
 
@@ -31,13 +33,14 @@ INSERT INTO operativo.evento_visualizacion (id_usuario, id_documento, created_at
 SELECT 1, 9999, NOW() FROM generate_series(1, 6);
 
 
--- >>> NOTA: Asegurarse de insertar nuevos datos en Redis y correr el ETL antes de continuar con la Fase 3.
+-- >>> NOTA: Asegurarse de insertar nuevos datos en Redis y correr el ETL (GitHub actions) antes de continuar con la Fase 3.
 
 
 --  3: Verificación Post-ETL en el DWH
 
 -- 1. Comprobar que la materia y el documento se sincronizaron al DWH
 SELECT * FROM dwh.dim_materia WHERE nombre_materia = 'Demo SQL en Vivo';
+
 SELECT * FROM dwh.dim_documento WHERE id_documento = 9999;
 
 -- 2. Comprobar las interacciones consolidadas (hechos)
