@@ -11,7 +11,7 @@ Este documento resume los cambios realizados en el repositorio para desplegar la
   2. La siembra de datos transaccionales con `supabase/seeds/operativo_seed.sql`.
   3. La siembra del diccionario de autocompletado y métricas NoSQL en **Redis Cloud**.
   4. La ejecución del ETL completo ([`etl/run_etl.py`](../etl/run_etl.py)).
-* **Carpeta Redis:** La demo Redis vive en [`nosql/`](../nosql/) (instancia local en Docker, opcional). El motor productivo corre en **Redis Cloud**; el seed `nosql/seed/seed.py` se sigue utilizando para poblar la nube.
+* **Carpeta Redis:** La demo Redis vive en [`redis/`](../redis/) (instancia local en Docker, opcional). El motor productivo corre en **Redis Cloud**; el seed `redis/seed/seed.py` se sigue utilizando para poblar la nube.
 * **Motor Vectorial (`search/`):**
   * Se desestimó el motor viejo (movido a `search/desestimado/motor_vectorial.py`).
   * [`search/motor.py`](../search/motor.py) interactúa con la tabla transaccional `operativo.documento` e inserta el autor principal en `operativo.documento_autor`.
@@ -27,7 +27,7 @@ Las dependencias estan separadas por componente. Para el ETL:
 # Activar su entorno virtual e instalar dependencias del ETL
 pip install -r etl/requirements.txt
 ```
-(El motor vectorial usa `search/requirements.txt` y la demo Redis `nosql/seed/requirements.txt`.)
+(El motor vectorial usa `search/requirements.txt` y la demo Redis `redis/seed/requirements.txt`.)
 
 ### B. Configuración de Variables de Entorno
 Copien `.env.example` (en la raíz) a `.env` (gitignored, no se sube) y completen con las credenciales reales de Supabase y Redis Cloud.

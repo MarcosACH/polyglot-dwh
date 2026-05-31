@@ -95,7 +95,7 @@ python etl/bootstrap.py
 
 1. `TRUNCATE` de los esquemas `dwh` y `operativo`.
 2. Seed transaccional en `operativo` con [`seeds/operativo_seed.sql`](seeds/operativo_seed.sql).
-3. Seed de Redis Cloud (`nosql/seed/seed.py`): autocompletado + `queries:popularity`.
+3. Seed de Redis Cloud (`redis/seed/seed.py`): autocompletado + `queries:popularity`.
 4. Corrida del ETL completo ([`etl/run_etl.py`](../etl/run_etl.py)): `dwh.run_etl()` (operativo -> dwh) + Fase Redis (popularidad -> `dwh.fact_query_popularity`).
 
 El seed usa `setseed(0.42)`, asi que es **reproducible**.

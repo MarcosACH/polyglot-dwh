@@ -30,7 +30,7 @@ docker compose version
 Desde la raiz del repo:
 
 ```bash
-cd nosql
+cd redis
 docker compose up -d
 ```
 

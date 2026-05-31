@@ -6,7 +6,7 @@ Este script solo carga DATOS, de forma idempotente:
 
   1. TRUNCATE de los esquemas dwh y operativo.
   2. Seed transaccional en operativo (supabase/seeds/operativo_seed.sql).
-  3. Seed de Redis Cloud (nosql/seed/seed.py).
+  3. Seed de Redis Cloud (redis/seed/seed.py).
   4. Corrida del ETL completo (etl/run_etl.py): operativo -> dwh + Redis -> dwh.
 
 Uso:
@@ -105,10 +105,10 @@ def seed_redis():
     env["REDIS_URL"] = REDIS_URL
 
     # Ejecutamos el script de seed de Redis
-    seed_script = ROOT_DIR / "nosql" / "seed" / "seed.py"
+    seed_script = ROOT_DIR / "redis" / "seed" / "seed.py"
 
     try:
-        # CWD en nosql/seed para que encuentre data.json
+        # CWD en redis/seed para que encuentre data.json
         result = subprocess.run(
             [sys.executable, str(seed_script)],
             env=env,

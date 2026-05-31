@@ -146,7 +146,7 @@ flowchart TB
 - **GitHub Actions**: corre el ETL (`etl/run_etl.py`) todos los días a las 00:00 UTC (y bajo demanda), leyendo las credenciales desde *secrets*. Reemplaza a un cron en un servidor propio.
 - **Power BI**: Desktop para autoría, Service (cloud) para consulta. Se conecta al schema `dwh`.
 
-Para desarrollo local, Supabase CLI levanta un PostgreSQL en Docker y Redis Stack corre vía `docker-compose` (carpeta `nosql/`).
+Para desarrollo local, Supabase CLI levanta un PostgreSQL en Docker y Redis Stack corre vía `docker-compose` (carpeta `redis/`).
 
 ---
 

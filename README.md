@@ -10,7 +10,7 @@ Trabajo practico integrador de la materia Base de Datos.
 - **ETL (`etl/`)** — pipeline que carga el DWH: `dwh.run_etl()` (operativo -> dwh, incremental por watermark) + Fase Redis (popularidad de queries -> `dwh.fact_query_popularity`). Orquestado por GitHub Actions todos los dias.
 - **Mineria de datos** — funciones dinamicas de segmentacion de autores y prediccion de visualizaciones sobre el DWH.
 - **Busqueda vectorial (`search/`)** — indexacion semantica con embeddings locales (`sentence-transformers`, `all-MiniLM-L6-v2`) + extraccion de PDF. Demo de la mitad semantica del buscador de la app.
-- **NoSQL (`nosql/`)** — Redis (autocompletado con RediSearch, blacklist de JWT, rate limiting). Productivo en **Redis Cloud**; instancia local en Docker opcional para la demo.
+- **NoSQL (`redis/`)** — Redis (autocompletado con RediSearch, blacklist de JWT, rate limiting). Productivo en **Redis Cloud**; instancia local en Docker opcional para la demo.
 
 ## Stack
 
@@ -69,7 +69,7 @@ Trabajo practico integrador de la materia Base de Datos.
 |   |-- run_etl.py             ETL: operativo -> dwh + Redis -> dwh
 |   `-- requirements.txt
 |-- search/                    Busqueda semantica (pgvector + embeddings)
-`-- nosql/                     Redis: seed, demos y docker-compose local
+`-- redis/                     Redis: seed, demos y docker-compose local
 ```
 
 ## Quick start (Flujo A)
@@ -106,11 +106,11 @@ SELECT * FROM dwh.predecir_interacciones_documento(1, 3);
 El motor productivo corre en **Redis Cloud** (el ETL y `bootstrap.py` lo usan via `REDIS_URL`). Para correr la demo NoSQL en local con Docker:
 
 ```bash
-cd nosql
+cd redis
 docker compose up -d
 ```
 
-Guia completa (RedisInsight, seed y los tres casos de uso) en **[nosql/README.md](nosql/README.md)**.
+Guia completa (RedisInsight, seed y los tres casos de uso) en **[redis/README.md](redis/README.md)**.
 
 ## Documentacion
 
