@@ -86,7 +86,7 @@ SELECT
     e.nombre,
     'Usuario ' || u.i
 FROM generate_series(1, 2000) AS u(i)
-JOIN _carrera c ON c.id_carrera = ((u.i * 31) % 30) + 1
+JOIN _carrera c ON c.id_carrera = (floor(power(random(), 1.5) * 30))::int + 1
 JOIN _escuela e ON e.id_escuela = c.id_escuela;
 
 -- ---------- dim_tipo_documento (8) ----------
@@ -101,24 +101,40 @@ INSERT INTO dwh.dim_tipo_documento (id_tipo, nombre) VALUES
     (8, 'informe_catedra');
 
 -- ---------- dim_documento (SCD1, 5000) ----------
+WITH raw_doc AS (
+    SELECT
+        i,
+        '2024-01-01'::date + (random() * 879)::int AS f_alta,
+        random() AS r_tipo,
+        random() AS r_mat,
+        random() AS r_vis,
+        random() AS r_del
+    FROM generate_series(1, 5000) AS g(i)
+)
 INSERT INTO dwh.dim_documento
     (id_documento, id_tipo, id_materia, titulo, fecha_alta, visibilidad, is_deleted, deleted_at)
 SELECT
     i,
-    ((i * 11) % 8) + 1,
-    ((i * 23) % 300) + 1,
+    CASE 
+        WHEN r_tipo < 0.05 THEN 1
+        WHEN r_tipo < 0.20 THEN 2
+        WHEN r_tipo < 0.55 THEN 3
+        WHEN r_tipo < 0.60 THEN 4
+        WHEN r_tipo < 0.75 THEN 5
+        WHEN r_tipo < 0.80 THEN 6
+        WHEN r_tipo < 0.95 THEN 7
+        ELSE 8 
+    END,
+    (floor(power(r_mat, 1.5) * 300))::int + 1,
     'Documento ' || i || ': estudio sobre ' ||
         (ARRAY['IA aplicada','cambio climatico','politica publica','genomica',
                'historia argentina','algebra lineal','sociologia urbana','redes neuronales',
                'biotecnologia','filosofia','ecologia','derecho ambiental'])[((i * 7) % 12) + 1],
-    '2024-01-01'::date + ((i * 17) % 900),
-    (ARRAY['publico','interno','privado'])[((i * 7) % 3) + 1],
-    -- 3% soft-deleted
-    (i * 41) % 100 < 3,
-    CASE WHEN (i * 41) % 100 < 3
-         THEN '2024-01-01'::date + ((i * 17) % 900) + ((i * 19) % 200)
-         ELSE NULL END
-FROM generate_series(1, 5000) AS g(i);
+    f_alta,
+    CASE WHEN r_vis < 0.70 THEN 'publico' WHEN r_vis < 0.90 THEN 'interno' ELSE 'privado' END,
+    r_del < 0.03,
+    CASE WHEN r_del < 0.03 THEN f_alta + (random() * 80)::int ELSE NULL END
+FROM raw_doc;
 
 -- ---------- dim_tipo_interaccion ----------
 INSERT INTO dwh.dim_tipo_interaccion (id_tipo_interaccion, nombre) VALUES
@@ -141,8 +157,8 @@ INSERT INTO dwh.fact_interaccion_documento
 SELECT fecha, id_documento, 2, COUNT(*)
 FROM (
     SELECT
-        '2024-01-01'::date + (random() * 1095)::int AS fecha,
-        (random() * 4999)::int + 1                  AS id_documento
+        '2024-01-01'::date + (random() * 880)::int AS fecha,
+        (floor(power(random(), 2) * 4997))::int + 4 AS id_documento
     FROM generate_series(1, 30000)
 ) v
 GROUP BY fecha, id_documento;
@@ -153,8 +169,8 @@ INSERT INTO dwh.fact_interaccion_documento
 SELECT fecha, id_documento, 3, COUNT(*)
 FROM (
     SELECT
-        '2024-01-01'::date + (random() * 1095)::int AS fecha,
-        (random() * 4999)::int + 1                  AS id_documento
+        '2024-01-01'::date + (random() * 880)::int AS fecha,
+        (floor(power(random(), 2) * 4997))::int + 4 AS id_documento
     FROM generate_series(1, 8000)
     WHERE random() < 0.75
 ) f
@@ -173,7 +189,7 @@ SELECT
     doc.id_documento,
     2,
     doc.base + doc.slope * (g.ord - 1)::int
-FROM generate_series('2024-01-01'::date, '2026-12-01'::date, '1 month') WITH ORDINALITY AS g(gm, ord)
+FROM generate_series('2024-01-01'::date, '2026-05-01'::date, '1 month') WITH ORDINALITY AS g(gm, ord)
 CROSS JOIN (VALUES
     (1,  6,  1),    -- creciente
     (2, 41, -1),    -- decreciente

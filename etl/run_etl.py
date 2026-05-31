@@ -1,11 +1,12 @@
 import os
 import datetime
+from pathlib import Path
 import redis
 import psycopg2
 from dotenv import load_dotenv
 
-# Cargar variables de entorno
-load_dotenv()
+# Cargar variables de entorno desde el .env del root (independiente del CWD)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 DATABASE_URL = os.environ.get("DATABASE_URL")

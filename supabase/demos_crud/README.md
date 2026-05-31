@@ -8,7 +8,7 @@ Cada demo se corre con `psql` contra la misma DB de Supabase donde estan aplicad
 
 ## 1. Pre-requisitos
 
-- Migration aplicada (`supabase/migrations/0001_dwh_schema.sql`) y seed cargado (`supabase/seed.sql`). Ver [`supabase/README.md`](../README.md).
+- Esquema aplicado (`supabase db push`) y DWH poblado vía Flujo A (`python etl/bootstrap.py`). Ver [`supabase/README.md`](../README.md).
 - `psql` instalado y la connection string del proyecto (Dashboard -> Project Settings -> Database -> Connection string URI).
 - Archivo `.env` completado con las credenciales del DWH (ver paso 3).
 
@@ -35,7 +35,7 @@ Cada demo se corre con `psql` contra la misma DB de Supabase donde estan aplicad
 
 ### 3.1 Completar el `.env`
 
-`supabase/demos/.env` ya esta creado con los campos vacios (esta gitignored). Editarlo y completar con los datos de la connection string del proyecto (Dashboard -> Project Settings -> Database):
+`supabase/demos_crud/.env` ya esta creado con los campos vacios (esta gitignored). Editarlo y completar con los datos de la connection string del proyecto (Dashboard -> Project Settings -> Database):
 
 ```
 PGHOST=aws-0-<region>.pooler.supabase.com
@@ -52,7 +52,7 @@ PGDATABASE=postgres
 **PowerShell** (Windows):
 
 ```powershell
-Get-Content supabase/demos/.env | ForEach-Object {
+Get-Content supabase/demos_crud/.env | ForEach-Object {
     if ($_ -match '^\s*([^#=]+)=(.*)$') {
         Set-Item "Env:$($matches[1].Trim())" $matches[2].Trim()
     }
@@ -62,18 +62,18 @@ Get-Content supabase/demos/.env | ForEach-Object {
 **Bash** (macOS / Linux):
 
 ```bash
-set -a; source supabase/demos/.env; set +a
+set -a; source supabase/demos_crud/.env; set +a
 ```
 
 ### 3.3 Ejecutar los demos
 
 ```bash
-psql -f supabase/demos/01_creacion.sql
-psql -f supabase/demos/02_eliminacion.sql
-psql -f supabase/demos/03_insercion.sql
-psql -f supabase/demos/04_actualizacion.sql
-psql -f supabase/demos/05_busqueda_1clave.sql
-psql -f supabase/demos/06_busqueda_2claves.sql
+psql -f supabase/demos_crud/01_creacion.sql
+psql -f supabase/demos_crud/02_eliminacion.sql
+psql -f supabase/demos_crud/03_insercion.sql
+psql -f supabase/demos_crud/04_actualizacion.sql
+psql -f supabase/demos_crud/05_busqueda_1clave.sql
+psql -f supabase/demos_crud/06_busqueda_2claves.sql
 ```
 
 Cada `psql -f` imprime los resultados de los `SELECT` directamente en la terminal.

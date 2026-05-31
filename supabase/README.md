@@ -1,9 +1,9 @@
 # Setup Supabase - Guia operativa
 
-Esta guia describe como **desplegar y correr** el DWH de BUSCASAM sobre Supabase:
-migraciones, carga del seed, demos CRUD (punto 4) y funciones de mineria (punto 5).
+Como **desplegar y correr** el DWH de BUSCASAM sobre Supabase siguiendo el **Flujo A**
+(operativo -> ETL -> dwh): migraciones, carga de datos, demos CRUD (punto 4) y mineria (punto 5).
 
-Orden de despliegue: **migraciones -> seed -> demos / mineria**.
+Orden: **migraciones (`supabase db push`) -> datos + ETL (`etl/bootstrap.py`) -> demos / mineria**.
 
 ---
 
@@ -22,168 +22,135 @@ scoop install supabase
 
 # Opcion B - winget
 winget install Supabase.CLI
-
-# Opcion C - binario directo
-# Descargar desde https://github.com/supabase/cli/releases y agregar al PATH
 ```
 
 **macOS / Linux**:
 
 ```bash
 brew install supabase/tap/supabase            # macOS
-# o
 curl -fsSL https://supabase.com/install.sh | sh   # Linux
 ```
 
-Verificar:
+Verificar: `supabase --version`
+
+### 1.2 Variables de entorno
+
+Copiar `.env.example` (raiz del repo) a `.env` y completar `DATABASE_URL` y `REDIS_URL`.
+El **project-ref** es el ultimo segmento de la URL del dashboard:
+`https://supabase.com/dashboard/project/<PROJECT-REF>`.
+
+### 1.3 Python (para el bootstrap y el ETL)
 
 ```powershell
-supabase --version
+pip install -r etl/requirements.txt
 ```
-
-### 1.2 Datos del proyecto Supabase
-
-- **project-ref**: ultimo segmento de la URL del dashboard.
-  `https://supabase.com/dashboard/project/<PROJECT-REF>`
 
 ---
 
 ## 2. Setup inicial (una sola vez por persona)
 
 ```powershell
-# Posicionarse en la raiz del repo
-cd "C:\ruta\al\repo\Bases de Datos"
-
-# Autenticarse (abre navegador)
-supabase login
-
-# Vincular al proyecto remoto (te va a pedir la DB password)
-supabase link --project-ref <PROJECT-REF>
+cd "C:\ruta\al\repo"
+supabase login                            # abre navegador
+supabase link --project-ref <PROJECT-REF> # pide la DB password
 ```
 
-Despues del `link`, la CLI guarda el estado en `supabase/.temp/` (ignorado por git).
-Cada miembro del equipo corre `supabase link` una vez en su maquina.
+La CLI guarda el estado en `supabase/.temp/` (ignorado por git). Cada miembro corre `supabase link` una vez.
 
 ---
 
-## 3. Aplicar migrations al remoto
+## 3. Aplicar migraciones al remoto
 
 ```powershell
-# Ver migrations pendientes
-supabase migration list
-
-# Aplicar todas las pendientes
-supabase db push
+supabase migration list   # ver pendientes
+supabase db push          # aplica las que faltan
 ```
 
-`db push` aplica solo las migrations que aun no estan en la tabla `supabase_migrations.schema_migrations` del remoto. Es seguro correrlo multiples veces.
+`db push` aplica solo lo que aun no esta en `supabase_migrations.schema_migrations` del remoto. Es seguro repetirlo.
 
-### Migrations incluidas
+### Migraciones incluidas
 
-| Archivo                                   | Contenido                                                                       |
-|-------------------------------------------|---------------------------------------------------------------------------------|
-| `supabase/migrations/0001_dwh_schema.sql` | Schema `dwh`: 10 tablas (6 dimensiones + 3 hechos + `etl_watermark`) + indices  |
-| `supabase/migrations/0002_mineria.sql`    | Funciones de mineria: `segmentar_autores` y `predecir_interacciones_documento`  |
+Estan ordenadas por dependencia (el sufijo timestamp define el orden de aplicacion):
 
-El modelo es una **estrella desnormalizada (Kimball, SCD1)** con la jerarquia Escuela > Carrera > Materia aplanada en `dim_materia`. Es el DER de [`design/agregado.dbml`](../design/agregado.dbml).
+| Archivo                                              | Contenido                                                                          |
+|------------------------------------------------------|------------------------------------------------------------------------------------|
+| `migrations/20260530100000_operativo_schema.sql`    | Schema `operativo` (OLTP 3NF): 12 tablas + triggers `updated_at` + pgvector/tsvector |
+| `migrations/20260530100100_dwh_schema.sql`          | Schema `dwh`: 10 tablas (6 dimensiones + 3 hechos + `etl_watermark`) + indices     |
+| `migrations/20260530100200_dwh_etl.sql`             | Funcion `dwh.run_etl()` (operativo -> dwh, incremental por watermark)              |
+| `migrations/20260530100300_dwh_mineria.sql`         | Funciones de mineria: `segmentar_autores` y `predecir_interacciones_documento`     |
+
+El DWH es una **estrella desnormalizada (Kimball, SCD1)** con la jerarquia Escuela > Carrera > Materia aplanada en `dim_materia`. Es el DER de [`design/dwh.dbml`](../design/dwh.dbml); el operativo, el de [`design/operativo.dbml`](../design/operativo.dbml).
 
 ---
 
-## 4. Cargar datos sinteticos (seed)
+## 4. Cargar datos y correr el ETL (Flujo A)
 
-> **Importante**: `supabase db push` **NO** ejecuta `seed.sql`. La CLI solo lo corre automaticamente con `supabase db reset` (modo local, ver seccion 7). Para el remoto hay que cargarlo manualmente.
-
-### Opcion A - SQL Editor del dashboard (la mas simple)
-
-1. Abrir `supabase/seed.sql` en el editor local, copiar todo el contenido.
-2. Dashboard -> SQL Editor -> New query -> pegar -> Run.
-3. Esperar ~30-60s.
-
-### Opcion B - psql (si esta instalado)
+> **Importante**: `supabase db push` aplica el **esquema** pero **NO** carga datos. La carga la hace el bootstrap.
 
 ```powershell
-# Connection string: Dashboard -> Project Settings -> Database -> Connection string (URI)
-psql "postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres" `
-    -f supabase/seed.sql
+python etl/bootstrap.py
 ```
 
-El seed usa `setseed(0.42)`, asi que es **reproducible**: cargarlo de nuevo (sobre una DB recien migrada) da siempre los mismos datos.
+`etl/bootstrap.py` hace, de forma idempotente (lee credenciales del `.env`):
+
+1. `TRUNCATE` de los esquemas `dwh` y `operativo`.
+2. Seed transaccional en `operativo` con [`seeds/operativo_seed.sql`](seeds/operativo_seed.sql).
+3. Seed de Redis Cloud (`redis/seed/seed.py`): autocompletado + `queries:popularity`.
+4. Corrida del ETL completo ([`etl/run_etl.py`](../etl/run_etl.py)): `dwh.run_etl()` (operativo -> dwh) + Fase Redis (popularidad -> `dwh.fact_query_popularity`).
+
+El seed usa `setseed(0.42)`, asi que es **reproducible**.
 
 ### Verificacion
 
 ```sql
 SELECT
-  (SELECT count(*) FROM dwh.dim_materia)                AS materias,
-  (SELECT count(*) FROM dwh.dim_tiempo)                 AS dias,
-  (SELECT count(*) FROM dwh.dim_usuario)                AS usuarios,
-  (SELECT count(*) FROM dwh.dim_documento)              AS documentos,
-  (SELECT count(*) FROM dwh.fact_interaccion_documento) AS interacciones_doc,
-  (SELECT count(*) FROM dwh.fact_interaccion_autor)     AS interacciones_autor,
-  (SELECT count(*) FROM dwh.fact_query_popularity)      AS query_popularity;
+  (SELECT count(*) FROM dwh.dim_materia)                AS materias,    -- 300
+  (SELECT count(*) FROM dwh.dim_usuario)                AS usuarios,    -- 2001 (2000 + sentinel id 0)
+  (SELECT count(*) FROM dwh.dim_documento)              AS documentos,  -- 5000
+  (SELECT count(*) FROM dwh.fact_interaccion_documento) AS f_doc,       -- > 0
+  (SELECT count(*) FROM dwh.fact_interaccion_autor)     AS f_autor;     -- > 0
 ```
 
-Volumenes esperados:
+> Las dimensiones son deterministas; los hechos agregados pueden variar levemente segun como colapsan los eventos aleatorios.
 
-| Tabla                        | Filas    | Notas                                         |
-|------------------------------|----------|-----------------------------------------------|
-| dim_materia                  | 300      | jerarquia Escuela/Carrera/Materia aplanada    |
-| dim_tiempo                   | 1096     | 2024-01-01 a 2026-12-31                       |
-| dim_usuario                  | 2000     | SCD1                                          |
-| dim_tipo_documento           | 8        |                                               |
-| dim_documento                | 5000     | SCD1, ~3% con `is_deleted = true`             |
-| dim_tipo_interaccion         | 3        | publicacion / visualizacion / favorito_agregar |
-| fact_interaccion_documento   | ~41021   | agregado por (fecha, doc, tipo)               |
-| fact_interaccion_autor       | ~56896   | agregado por (fecha, autor, tipo)             |
-| fact_query_popularity        | 13152    | 12 queries x 1096 dias (snapshot diario)      |
-| etl_watermark                | 7        |                                               |
+### Atajo Flujo B (DWH directo, sin operativo ni ETL)
 
-> Las dimensiones son exactas (formulas deterministas). Los hechos agregados pueden variar ligeramente segun como colapsan los eventos aleatorios, por eso van con `~`.
+[`seeds/dwh_directo.sql`](seeds/dwh_directo.sql) puebla `dwh.*` **directamente** con datos sinteticos, salteando el operativo y el ETL. Sirve para demostrar el DWH de forma aislada (pegar en el SQL Editor y ejecutar). **No** es parte del Flujo A; no mezclar ambos caminos sobre la misma DB.
 
 ---
 
-## 5. Correr los demos CRUD (punto 4)
+## 5. Demos CRUD (punto 4)
 
-Seis scripts ejecutables en `supabase/demos/` (Creacion, Eliminacion, Insercion, Actualizacion, Busqueda 1 clave, Busqueda 2 claves). Los demos 01-04 corren dentro de `BEGIN; ... ROLLBACK;` (no persisten nada); 05-06 son solo lectura.
+Seis scripts en [`demos_crud/`](demos_crud/) (Creacion, Eliminacion, Insercion, Actualizacion, Busqueda 1 clave, Busqueda 2 claves). Los demos 01-04 corren dentro de `BEGIN; ... ROLLBACK;` (no persisten); 05-06 son solo lectura. Requieren migraciones + datos cargados.
 
-El detalle completo (configurar `.env`, cargar variables y ejecutar) esta en [`supabase/demos/README.md`](demos/README.md).
+Detalle completo (configurar `.env`, cargar variables, ejecutar) en [`demos_crud/README.md`](demos_crud/README.md).
 
-### Conexion directa al remoto
+### Conexion directa al remoto (psql)
 
-`localhost:5432` **no** funciona salvo que tengas el stack local corriendo (seccion 7). Para correr contra el remoto hay que usar la pooler connection string (Dashboard -> Project Settings -> Database, o `supabase/.temp/pooler-url` tras el `link`), en modo **session** (puerto 5432, apto para scripts `.sql`):
+`localhost:5432` no funciona salvo stack local (seccion 7). Para el remoto, usar la pooler connection string en modo **session** (puerto 5432):
 
 ```powershell
-# Setea la DB password solo para esta sesion de PowerShell (no la expone en el comando)
-$env:PGPASSWORD = "TU_PASSWORD"
-
+$env:PGPASSWORD = "TU_PASSWORD"   # vive solo en esta terminal; limpiar con $env:PGPASSWORD = $null
 psql -h aws-1-<region>.pooler.supabase.com -p 5432 -U postgres.<ref> -d postgres `
-    -v ON_ERROR_STOP=1 -f supabase/demos/01_creacion.sql
+    -v ON_ERROR_STOP=1 -f supabase/demos_crud/01_creacion.sql
 ```
 
-- `$env:PGPASSWORD` lo lee `psql` automaticamente; vive solo en esa terminal. Limpiar al terminar con `$env:PGPASSWORD = $null`.
-- `-v ON_ERROR_STOP=1` aborta ante el primer error en vez de seguir.
-- Alternativa en una linea (la pass queda visible en el historial):
-  `psql "postgresql://postgres.<ref>:<password>@aws-1-<region>.pooler.supabase.com:5432/postgres" -f supabase/demos/01_creacion.sql`
-
-Los seis scripts:
+Los seis:
 
 ```powershell
-psql -f supabase/demos/01_creacion.sql
-psql -f supabase/demos/02_eliminacion.sql
-psql -f supabase/demos/03_insercion.sql
-psql -f supabase/demos/04_actualizacion.sql
-psql -f supabase/demos/05_busqueda_1clave.sql
-psql -f supabase/demos/06_busqueda_2claves.sql
+psql -f supabase/demos_crud/01_creacion.sql
+psql -f supabase/demos_crud/02_eliminacion.sql
+psql -f supabase/demos_crud/03_insercion.sql
+psql -f supabase/demos_crud/04_actualizacion.sql
+psql -f supabase/demos_crud/05_busqueda_1clave.sql
+psql -f supabase/demos_crud/06_busqueda_2claves.sql
 ```
-
-Requieren migraciones + seed ya cargados.
 
 ---
 
 ## 6. Mineria de datos (punto 5)
 
-Las dos funciones se despliegan con la migration `0002_mineria.sql` (paso 3). Explicacion y salida esperada en [`docs/mineria.md`](../docs/mineria.md).
-
-Las consultas (son solo lectura):
+Las dos funciones se despliegan con `migrations/20260530100300_dwh_mineria.sql` (paso 3). Explicacion y salida esperada en [`docs/mineria.md`](../docs/mineria.md).
 
 ```sql
 -- 5.1 Segmentacion: autores en matriz volumen x impacto
@@ -195,73 +162,45 @@ GROUP  BY segmento ORDER BY 2 DESC;
 SELECT * FROM dwh.predecir_interacciones_documento(1, 3);   -- doc 1, horizonte 3 meses
 ```
 
-### Correr por psql desde tu maquina
+Los documentos 1 (creciente), 2 (decreciente) y 3 (estable) tienen una serie con tendencia inyectada en `seeds/operativo_seed.sql` para ilustrar la prediccion.
 
-Con la misma conexion al remoto de la seccion 5 (pooler en modo session, `$env:PGPASSWORD` ya seteado), pasalas inline con `-c`:
-
-```powershell
-$env:PGPASSWORD = "TU_PASSWORD"
-
-# 5.1 Segmentacion
-psql -h aws-1-<region>.pooler.supabase.com -p 5432 -U postgres.<ref> -d postgres `
-    -c "SELECT segmento, count(*) FROM dwh.segmentar_autores() GROUP BY segmento ORDER BY 2 DESC;"
-
-# 5.2 Prediccion (doc 1, horizonte 3 meses)
-psql -h aws-1-<region>.pooler.supabase.com -p 5432 -U postgres.<ref> -d postgres `
-    -c "SELECT * FROM dwh.predecir_interacciones_documento(1, 3);"
-```
-
-Los documentos 1 (creciente), 2 (decreciente) y 3 (estable) tienen una serie con tendencia inyectada en el seed para ilustrar la prediccion.
-
-El **dashboard BI (punto 6)** y sus 4 consultas estan documentados en [`docs/dashboard_bi.md`](../docs/dashboard_bi.md).
+El **dashboard BI (punto 6)** y sus 4 consultas estan en [`docs/dashboard_bi.md`](../docs/dashboard_bi.md).
 
 ---
 
 ## 7. Alternativa: stack local con Docker
 
-Si preferis no tocar el remoto, la CLI levanta un Postgres local que **aplica migraciones y corre `seed.sql` automaticamente**:
+La CLI levanta un Postgres local que **aplica migraciones y corre el seed del operativo automaticamente** (segun `config.toml`, `db.seed` apunta a `seeds/operativo_seed.sql`):
 
 ```powershell
 supabase start        # levanta el stack local (requiere Docker)
-supabase db reset     # recrea la DB: migraciones + seed.sql de una
+supabase db reset     # recrea la DB: migraciones + seed del operativo
+python etl/bootstrap.py   # siembra Redis y corre el ETL -> pobla el dwh
 ```
 
-`db reset` es la forma mas rapida de tener todo (esquema + datos + funciones) corriendo desde cero. La connection string local la imprime `supabase start`.
+`db reset` deja el **operativo** poblado; el **dwh** se llena al correr el ETL.
 
 ---
 
 ## 8. Workflow: agregar una nueva migration
 
 ```powershell
-# 1. Crear archivo vacio (genera supabase/migrations/<timestamp>_<nombre>.sql)
-supabase migration new agregar_dim_X
-
-# 2. Editar el archivo recien creado y escribir el SQL
-code supabase/migrations/<timestamp>_agregar_dim_X.sql
-
-# 3. (Opcional) Revisar pendientes
-supabase migration list
-
-# 4. Aplicar al remoto
-supabase db push
-
-# 5. Commit + push a GitHub
-git add supabase/migrations/
-git commit -m "agregar dim X"
-git push
+supabase migration new <nombre>            # genera supabase/migrations/<timestamp>_<nombre>.sql
+# editar el archivo y escribir el SQL
+supabase db push                           # aplicar al remoto
+git add supabase/migrations/ && git commit -m "agregar <nombre>"
 ```
 
 ### Convenciones
 
-- **Nombres descriptivos** en snake_case: `agregar_indice_visualizacion`, `corregir_fk_documento`.
-- **Una migration = un cambio logico**. Mas chicas son mas faciles de revertir y revisar.
-- **No editar migrations ya aplicadas en el remoto**. Si necesitas corregir algo, crea una nueva migration que arregle el problema.
-- Si la migration falla, el push aborta y la migration **no** queda marcada como aplicada. Se corrige el archivo y se vuelve a correr `supabase db push`.
+- Nombres descriptivos en snake_case con prefijo timestamp (lo genera `migration new`).
+- Una migration = un cambio logico. **Aditivas e idempotentes** (`CREATE ... IF NOT EXISTS`, `CREATE OR REPLACE`); nunca destructivas (`DROP SCHEMA`).
+- **No editar migrations ya aplicadas en el remoto.** Si hay que corregir, crear una nueva.
 
 ---
 
 ## Referencias
 
 - Supabase CLI: <https://supabase.com/docs/guides/cli>
-- Supabase migrations: <https://supabase.com/docs/guides/cli/local-development#database-migrations>
-- DBML syntax: <https://dbml.dbdiagram.io/docs>
+- Migrations: <https://supabase.com/docs/guides/cli/local-development#database-migrations>
+- DBML: <https://dbml.dbdiagram.io/docs>

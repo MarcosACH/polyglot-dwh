@@ -72,10 +72,10 @@ SELECT
     i,
     'usuario' || i || '@unsam.edu.ar',
     'Usuario ' || i,
-    CASE WHEN (i * 7919) % 100 < 85 THEN 'estudiante' ELSE 'docente' END,
-    ((i * 31) % 30) + 1,
-    '2024-01-01 00:00:00+00'::timestamptz + ((i * 13) % 700) * INTERVAL '1 day',
-    '2024-01-01 00:00:00+00'::timestamptz + ((i * 13) % 700) * INTERVAL '1 day'
+    CASE WHEN random() < 0.85 THEN 'estudiante' ELSE 'docente' END,
+    (floor(power(random(), 1.5) * 30))::int + 1,
+    '2024-01-01 00:00:00+00'::timestamptz + (random() * 700)::int * INTERVAL '1 day',
+    '2024-01-01 00:00:00+00'::timestamptz + (random() * 700)::int * INTERVAL '1 day'
 FROM generate_series(1, 2000) i;
 
 -- Aplicar cambios para reflejar el estado actual de los usuarios promocionados el 2025-06-01 (SCD2 en DWH)
@@ -104,6 +104,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+WITH raw_data AS (
+    SELECT
+        i,
+        '2024-01-01'::timestamptz + (random() * 879)::int * INTERVAL '1 day' + (random() * 24)::int * INTERVAL '1 hour' AS c_at,
+        random() AS r_vis,
+        random() AS r_tipo,
+        random() AS r_mat,
+        random() AS r_up,
+        random() AS r_del
+    FROM generate_series(1, 5000) i
+)
 INSERT INTO operativo.documento (
     id, titulo, abstract, texto_completo, visibilidad,
     id_tipo, id_materia, id_uploader, archivo_url, embedding,
@@ -125,18 +136,25 @@ SELECT
                'historia argentina','algebra lineal','sociologia urbana','redes neuronales',
                'biotecnologia','filosofia','ecologia','derecho ambiental'])[((i * 7) % 12) + 1] || 
         ' y la bibliografia asociada. Se concluye que el impacto en la materia es relevante.',
-    (ARRAY['publico','interno','privado'])[((i * 3) % 3) + 1],
-    ((i * 11) % 8) + 1,
-    ((i * 23) % 300) + 1,
-    ((i * 53) % 2000) + 1,
+    CASE WHEN r_vis < 0.70 THEN 'publico' WHEN r_vis < 0.90 THEN 'interno' ELSE 'privado' END,
+    CASE 
+        WHEN r_tipo < 0.05 THEN 1
+        WHEN r_tipo < 0.20 THEN 2
+        WHEN r_tipo < 0.55 THEN 3
+        WHEN r_tipo < 0.60 THEN 4
+        WHEN r_tipo < 0.75 THEN 5
+        WHEN r_tipo < 0.80 THEN 6
+        WHEN r_tipo < 0.95 THEN 7
+        ELSE 8 
+    END,
+    (floor(power(r_mat, 1.5) * 300))::int + 1,
+    (floor(power(r_up, 3) * 1999))::int + 1,
     'https://storage.buscasam.unsam.edu.ar/documentos/' || i || '.pdf',
     operativo.generar_mock_vector(i),
-    CASE WHEN (i * 41) % 100 < 3
-         THEN ('2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day') + ((i * 19) % 200) * INTERVAL '1 day'
-         ELSE NULL END,
-    '2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day',
-    '2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day'
-FROM generate_series(1, 5000) i;
+    CASE WHEN r_del < 0.03 THEN c_at + (random() * 80)::int * INTERVAL '1 day' ELSE NULL END,
+    c_at,
+    c_at
+FROM raw_data;
 
 -- Eliminar la funcion auxiliar temporal
 DROP FUNCTION IF EXISTS operativo.generar_mock_vector(INT);
@@ -186,9 +204,9 @@ ON CONFLICT (id_documento, id_usuario) DO NOTHING;
 -- ---------- favoritos (~4000) ----------
 INSERT INTO operativo.favorito (id_usuario, id_documento, created_at)
 SELECT
-    ((i * 73) % 2000) + 1,
-    ((i * 109) % 5000) + 1,
-    '2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day'
+    (floor(power(random(), 2) * 1999))::int + 1,
+    (floor(power(random(), 2) * 4997))::int + 4,
+    '2024-01-01'::timestamptz + (random() * 879)::int * INTERVAL '1 day' + (random() * 24)::int * INTERVAL '1 hour'
 FROM generate_series(1, 4000) i
 ON CONFLICT (id_usuario, id_documento) DO NOTHING;
 
@@ -196,58 +214,90 @@ ON CONFLICT (id_usuario, id_documento) DO NOTHING;
 INSERT INTO operativo.evento_visualizacion (id, id_usuario, id_documento, created_at)
 SELECT
     i,
-    CASE WHEN (i * 31) % 100 < 10 THEN NULL -- 10% invitados anonimos
-         ELSE ((i * 73) % 2000) + 1
+    CASE WHEN random() < 0.10 THEN NULL -- 10% invitados anonimos
+         ELSE (floor(power(random(), 2) * 1999))::int + 1
     END,
-    ((i * 127) % 5000) + 1,
-    '2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day' + ((i * 7) % 24) * INTERVAL '1 hour'
+    (floor(power(random(), 2) * 4997))::int + 4,
+    '2024-01-01'::timestamptz + (random() * 879)::int * INTERVAL '1 day' + (random() * 24)::int * INTERVAL '1 hour'
 FROM generate_series(1, 30000) i;
 
 SELECT setval('operativo.evento_visualizacion_id_seq', (SELECT max(id) FROM operativo.evento_visualizacion));
+
+-- ---------- tendencia showcase para la demo de prediccion (docs 1, 2, 3) ----------
+-- Inyecta visualizaciones con una serie MENSUAL marcada para que, tras el ETL,
+-- dwh.predecir_interacciones_documento muestre una tendencia clara por documento:
+--   doc 1 -> creciente (6..41), doc 2 -> decreciente (41..6), doc 3 -> estable (22).
+-- Una fila por evento (1 visualizacion) el dia 15 de cada mes; id por default (BIGSERIAL,
+-- ya seteado por el setval de arriba). El ETL las agrega por (dia, doc) y la funcion de
+-- prediccion arma la serie mensual y ajusta la recta. Sin esto, las visualizaciones del
+-- seed son uniformes en el tiempo y la regresion da pendiente ~ 0.
+INSERT INTO operativo.evento_visualizacion (id_usuario, id_documento, created_at)
+SELECT
+    ((doc.id_documento * 53 + n) % 2000) + 1,
+    doc.id_documento,
+    (g.gm + INTERVAL '14 days') + (n % 24) * INTERVAL '1 hour'
+FROM generate_series('2024-01-01'::date, '2026-05-01'::date, '1 month') WITH ORDINALITY AS g(gm, ord)
+CROSS JOIN (VALUES
+    (1,  6,  1),    -- creciente
+    (2, 41, -1),    -- decreciente
+    (3, 22,  0)     -- estable
+) AS doc(id_documento, base, slope)
+CROSS JOIN LATERAL generate_series(1, GREATEST(doc.base + doc.slope * (g.ord - 1), 1)) AS n;
 
 -- ---------- descarga (10000) ----------
 INSERT INTO operativo.descarga (id, id_usuario, id_documento, created_at)
 SELECT
     i,
-    CASE WHEN (i * 13) % 100 < 10 THEN NULL -- 10% invitados anonimos
-         ELSE ((i * 73) % 2000) + 1
+    CASE WHEN random() < 0.10 THEN NULL -- 10% invitados anonimos
+         ELSE (floor(power(random(), 2) * 1999))::int + 1
     END,
-    ((i * 127) % 5000) + 1,
-    '2024-01-01'::timestamptz + ((i * 17) % 900) * INTERVAL '1 day' + ((i * 7) % 24) * INTERVAL '1 hour'
+    (floor(power(random(), 2) * 4997))::int + 4,
+    '2024-01-01'::timestamptz + (random() * 879)::int * INTERVAL '1 day' + (random() * 24)::int * INTERVAL '1 hour'
 FROM generate_series(1, 10000) i;
 
 SELECT setval('operativo.descarga_id_seq', (SELECT max(id) FROM operativo.descarga));
 
 -- ---------- comentario (4000: 3000 raiz + 1000 respuestas) ----------
 -- Raiz (id 1..3000)
+WITH raw_com AS (
+    SELECT
+        i,
+        '2024-01-01'::timestamptz + (random() * 870)::int * INTERVAL '1 day' AS c_at,
+        random() < 0.02 AS is_hidden
+    FROM generate_series(1, 3000) i
+)
 INSERT INTO operativo.comentario (id, id_usuario, id_documento, id_comentario_padre, texto, esta_oculto, fecha_oculto, created_at, updated_at)
 SELECT
     i,
-    ((i * 47) % 2000) + 1,
-    ((i * 89) % 5000) + 1,
+    (floor(power(random(), 2) * 1999))::int + 1,
+    (floor(power(random(), 2) * 4997))::int + 4,
     NULL,
     'Comentario de prueba numero ' || i || ' sobre este valioso documento. Interesante punto de vista.',
-    (i * 113) % 100 < 2, -- ~2% moderados/ocultados
-    CASE WHEN (i * 113) % 100 < 2
-         THEN ('2024-01-01'::timestamptz + ((i * 271) % 900) * INTERVAL '1 day') + 5 * INTERVAL '1 day'
-         ELSE NULL END,
-    '2024-01-01'::timestamptz + ((i * 271) % 900) * INTERVAL '1 day',
-    '2024-01-01'::timestamptz + ((i * 271) % 900) * INTERVAL '1 day'
-FROM generate_series(1, 3000) i;
+    is_hidden,
+    CASE WHEN is_hidden THEN c_at + (random() * 5)::int * INTERVAL '1 day' ELSE NULL END,
+    c_at,
+    c_at
+FROM raw_com;
 
 -- Respuestas (id 3001..4000)
+WITH raw_reply AS (
+    SELECT
+        i,
+        '2024-01-01'::timestamptz + (random() * 870)::int * INTERVAL '1 day' AS c_at
+    FROM generate_series(1, 1000) i
+)
 INSERT INTO operativo.comentario (id, id_usuario, id_documento, id_comentario_padre, texto, esta_oculto, fecha_oculto, created_at, updated_at)
 SELECT
     3000 + i,
-    ((i * 59) % 2000) + 1,
-    ((i * 89) % 5000) + 1,
-    ((i * 17) % 3000) + 1, -- referenciar un comentario raiz 1..3000
+    (floor(power(random(), 2) * 1999))::int + 1,
+    (floor(power(random(), 2) * 4997))::int + 4,
+    (floor(random() * 3000))::int + 1, -- referenciar un comentario raiz 1..3000
     'Respuesta de prueba numero ' || (3000 + i) || ' al comentario. Coincido con tu apreciacion del tema.',
     FALSE,
     NULL,
-    '2024-01-01'::timestamptz + ((i * 311) % 900) * INTERVAL '1 day',
-    '2024-01-01'::timestamptz + ((i * 311) % 900) * INTERVAL '1 day'
-FROM generate_series(1, 1000) i;
+    c_at,
+    c_at
+FROM raw_reply;
 
 SELECT setval('operativo.comentario_id_seq', (SELECT max(id) FROM operativo.comentario));
 
@@ -268,16 +318,16 @@ SELECT
            'historia colonial','algebra lineal','ecologia urbana','python pandas',
            'crispr edicion genetica','filosofia analitica'])[((i * 7) % 12) + 1],
     -- Filtros aplicados aleatoriamente
-    CASE WHEN (i * 11) % 100 < 10 THEN ((i * 3) % 5) + 1 END,
-    CASE WHEN (i * 13) % 100 < 10 THEN ((i * 7) % 30) + 1 END,
-    CASE WHEN (i * 17) % 100 < 15 THEN ((i * 91) % 300) + 1 END,
-    CASE WHEN (i * 19) % 100 < 5  THEN ((i * 13) % 8) + 1 END,
+    CASE WHEN random() < 0.10 THEN (floor(random() * 5))::int + 1 END,
+    CASE WHEN random() < 0.10 THEN (floor(random() * 30))::int + 1 END,
+    CASE WHEN random() < 0.15 THEN (floor(random() * 300))::int + 1 END,
+    CASE WHEN random() < 0.05  THEN (floor(random() * 8))::int + 1 END,
     NULL,
     NULL,
-    ((i * 19) % 50),
-    (i * 23) % 100 < 65,
-    md5('session' || ((i * 3) % 10000)),
-    '2024-01-01'::timestamptz + ((i * 17) % 1095) * INTERVAL '1 day' + ((i * 5) % 24) * INTERVAL '1 hour'
+    (floor(random() * 50))::int,
+    random() < 0.65,
+    md5('session' || (floor(random() * 10000))::int),
+    '2024-01-01'::timestamptz + (random() * 879)::int * INTERVAL '1 day' + (random() * 24)::int * INTERVAL '1 hour'
 FROM generate_series(1, 50000) i;
 
 SELECT setval('operativo.busqueda_id_seq', (SELECT max(id) FROM operativo.busqueda));

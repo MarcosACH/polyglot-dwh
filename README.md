@@ -5,113 +5,118 @@ Trabajo practico integrador de la materia Base de Datos.
 
 ## Contenido
 
-Este repositorio agrupa el diseno y el codigo de las tres demos del TP:
-
-- **DWH relacional (PostgreSQL / Supabase)** — diseno dimensional en copo de nieve con jerarquia Escuela > Carrera > Materia, schema desplegable via migrations, seed sintetico reproducible, y funciones de mineria de datos (prediccion de descargas, segmentacion de usuarios).
-- **Busqueda vectorial (PostgreSQL + pgvector)** — indexacion semantica de documentos sobre Supabase con embeddings locales (sentence-transformers, `all-MiniLM-L6-v2`) y extraccion de texto de PDF.
-- **Demo NoSQL (Redis)** — instancia local en Docker con autocompletado del buscador (RediSearch), blacklist de JWT y rate limiting por usuario.
-- **Documentacion** academica y operativa.
+- **Base operativa (PostgreSQL / Supabase, schema `operativo`)** — OLTP normalizada (3NF) que es la fuente de verdad transaccional: usuarios, documentos, interacciones, busquedas. Incluye `pgvector` (embeddings) y `tsvector` (busqueda lexica).
+- **DWH (PostgreSQL / Supabase, schema `dwh`)** — modelo dimensional en **estrella desnormalizada (Kimball, SCD1)** con la jerarquia Escuela > Carrera > Materia aplanada en `dim_materia`. Se alimenta del operativo via ETL.
+- **ETL (`etl/`)** — pipeline que carga el DWH: `dwh.run_etl()` (operativo -> dwh, incremental por watermark) + Fase Redis (popularidad de queries -> `dwh.fact_query_popularity`). Orquestado por GitHub Actions todos los dias.
+- **Mineria de datos** — funciones dinamicas de segmentacion de autores y prediccion de visualizaciones sobre el DWH.
+- **Busqueda vectorial (`search/`)** — indexacion semantica con embeddings locales (`sentence-transformers`, `all-MiniLM-L6-v2`) + extraccion de PDF. Demo de la mitad semantica del buscador de la app.
+- **NoSQL (`redis/`)** — Redis (autocompletado con RediSearch, blacklist de JWT, rate limiting). Productivo en **Redis Cloud**; instancia local en Docker opcional para la demo.
 
 ## Stack
 
-| Capa            | Tecnologia                                |
-|-----------------|-------------------------------------------|
-| DWH             | PostgreSQL (Supabase, schema `dwh`)       |
-| NoSQL           | Redis Stack (Docker, con RediSearch)      |
-| Migrations / CI | Supabase CLI                              |
-| Visualizacion   | Power BI + RedisInsight                   |
-| Diagramas       | DBML ([dbdiagram.io](https://dbdiagram.io)) |
+| Capa            | Tecnologia                                          |
+|-----------------|-----------------------------------------------------|
+| OLTP + DWH      | PostgreSQL (Supabase, schemas `operativo` y `dwh`)  |
+| NoSQL           | Redis Cloud (con RediSearch) / Redis Stack local    |
+| ETL / scheduler | Python (psycopg2 + redis) + GitHub Actions          |
+| Migraciones     | Supabase CLI                                        |
+| Visualizacion   | Power BI                                            |
+| Diagramas       | DBML ([dbdiagram.io](https://dbdiagram.io))         |
+
+## Flujo de datos (Flujo A)
+
+```
+                          Supabase (1 proyecto)
+  app / seed ──► schema operativo ──[ dwh.run_etl() ]──► schema dwh ──► Power BI
+                  (OLTP 3NF)            incremental        (estrella)
+                                                               ▲
+  Redis Cloud (ZSET queries:popularity) ──[ etl/run_etl.py ]──┘
+
+  Bootstrap (1 vez):   supabase db push   →   python etl/bootstrap.py
+  Diario (CI 00:00 UTC): etl/run_etl.py  (Fase1 PG→PG + Fase2 Redis→PG, incremental)
+```
 
 ## Estructura del repo
 
 ```
 .
 |-- README.md                  Este archivo
-|-- .gitignore
+|-- .env.example               Plantilla de variables de entorno (copiar a .env)
+|-- .github/workflows/etl.yml  CI: corre el ETL diariamente (00:00 UTC)
 |-- docs/
 |   |-- spec.md                Especificacion funcional de BUSCASAM
-|   |-- mineria.md             Mineria de datos: funciones y salida esperada
+|   |-- entrega.md             Monografia (documento de entrega)
+|   |-- mineria.md             Mineria: segmentacion y prediccion
 |   |-- dashboard_bi.md        Dashboard BI: las 4 consultas del punto 6
-|   `-- entrega.md             Documento de entrega
+|   `-- ...
 |-- design/
-|   |-- agregado.dbml          DER vigente (copiar/pegar en dbdiagram.io)
-|   |-- agregado_design_decisions.md   Decisiones de diseno del modelo
-|   `-- desestimado/
-|       `-- transaccional.dbml   Modelo transaccional descartado (referencia)
+|   |-- operativo.dbml         DER de la base operativa (OLTP)
+|   |-- dwh.dbml               DER del DWH (estrella desnormalizada)
+|   `-- decisiones.md          Decisiones de diseno del modelo
 |-- supabase/
-|   |-- README.md              Guia operativa: Supabase + migrations + seed
-|   |-- config.toml            Config del proyecto Supabase
-|   |-- migrations/            Migrations versionadas (orden lexicografico)
-|   |   |-- 0001_dwh_schema.sql
-|   |   `-- 0002_mineria.sql
-|   |-- seed.sql               Carga de datos sinteticos reproducible
-|   `-- demos/                 Scripts CRUD ejecutables (punto 4)
-|       |-- README.md
-|       |-- 01_creacion.sql
-|       |-- 02_eliminacion.sql
-|       |-- 03_insercion.sql
-|       |-- 04_actualizacion.sql
-|       |-- 05_busqueda_1clave.sql
-|       `-- 06_busqueda_2claves.sql
-|-- supabase_vectorial/        Busqueda semantica con pgvector + embeddings
-|   |-- 01_creacion.sql        Extension pgvector + tabla vectorial.documentos
-|   |-- motor_vectorial.py     Embeddings (sentence-transformers) + extraccion PDF
-|   `-- main.py                Demo de indexacion y busqueda
-`-- redis/
-    |-- README.md              Guia operativa: Docker + seed + demos
-    |-- docker-compose.yml     Redis Stack + RedisInsight
-    |-- seed/                  Datos sinteticos y script de carga
-    |   |-- data.json
-    |   |-- seed.py
-    |   `-- requirements.txt
-    `-- demo/                  Paso a paso de cada caso de uso
-        |-- 00_presentacion.md
-        |-- 01_autocomplete.md
-        |-- 02_jwt_blacklist.md
-        `-- 03_rate_limit.md
+|   |-- config.toml            Config del proyecto Supabase (db.seed -> operativo)
+|   |-- migrations/            Migraciones versionadas (timestamp, orden por dependencia)
+|   |   |-- 20260530100000_operativo_schema.sql
+|   |   |-- 20260530100100_dwh_schema.sql
+|   |   |-- 20260530100200_dwh_etl.sql
+|   |   `-- 20260530100300_dwh_mineria.sql
+|   |-- seeds/
+|   |   |-- operativo_seed.sql Seed transaccional reproducible (Flujo A, canonico)
+|   |   `-- dwh_directo.sql    Atajo: pobla el DWH directo, sin ETL (Flujo B)
+|   `-- demos_crud/            Scripts CRUD ejecutables (punto 4)
+|-- etl/
+|   |-- bootstrap.py           Carga datos (operativo + Redis) y corre el ETL
+|   |-- run_etl.py             ETL: operativo -> dwh + Redis -> dwh
+|   `-- requirements.txt
+|-- search/                    Busqueda semantica (pgvector + embeddings)
+`-- redis/                     Redis: seed, demos y docker-compose local
 ```
 
-## Quick start
+## Quick start (Flujo A)
 
-### DWH PostgreSQL (Supabase)
-
-Ver **[supabase/README.md](supabase/README.md)** para la guia paso a paso.
-
-Resumen para alguien que ya tiene la CLI instalada y el proyecto linkeado:
+Requisitos: [Supabase CLI](https://supabase.com/docs/guides/cli) instalada y el proyecto linkeado (`supabase login` + `supabase link`), Python 3.12+, y un `.env` en la raiz (copiar de `.env.example` y completar `DATABASE_URL` y `REDIS_URL`).
 
 ```powershell
-supabase db push          # aplica migrations/ al remoto
-# Cargar datos: copiar supabase/seed.sql en el SQL Editor del dashboard y ejecutar.
+pip install -r etl/requirements.txt
+
+# 1. Aplicar migraciones (operativo + dwh + etl + mineria) al remoto
+supabase db push
+
+# 2. Cargar datos y correr el ETL: seed operativo + seed Redis + ETL -> pobla el DWH
+python etl/bootstrap.py
 ```
+
+Alternativa 100% local (requiere Docker): `supabase db reset` aplica migraciones y corre el seed del operativo automaticamente; despues `python etl/bootstrap.py` siembra Redis y corre el ETL.
 
 Verificacion rapida (SQL Editor):
 
 ```sql
 SELECT
-  (SELECT count(*) FROM dwh.dim_usuario)    AS usuarios,
-  (SELECT count(*) FROM dwh.dim_documento)  AS documentos,
-  (SELECT count(*) FROM dwh.fact_busqueda)  AS busquedas;
--- Esperado: 2051 | 5100 | 50000
+  (SELECT count(*) FROM dwh.dim_materia)                AS materias,    -- 300
+  (SELECT count(*) FROM dwh.dim_usuario)                AS usuarios,    -- 2001 (2000 + sentinel id 0)
+  (SELECT count(*) FROM dwh.dim_documento)              AS documentos,  -- 5000
+  (SELECT count(*) FROM dwh.fact_interaccion_documento) AS f_doc;       -- > 0
+
+-- La demo de prediccion debe dar tendencia = creciente
+SELECT * FROM dwh.predecir_interacciones_documento(1, 3);
 ```
 
-### Redis (Docker)
+## Redis (instancia local opcional)
 
-Ver **[redis/README.md](redis/README.md)** para la guia completa (incluye RedisInsight, troubleshooting y los tres pasos a paso de las demos).
-
-Resumen para alguien que ya tiene Docker:
+El motor productivo corre en **Redis Cloud** (el ETL y `bootstrap.py` lo usan via `REDIS_URL`). Para correr la demo NoSQL en local con Docker:
 
 ```bash
 cd redis
 docker compose up -d
-cd seed && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python seed.py
 ```
 
-Abrir RedisInsight en <http://localhost:8001> y agregar la base en `127.0.0.1:6379`.
+Guia completa (RedisInsight, seed y los tres casos de uso) en **[redis/README.md](redis/README.md)**.
 
-Verificacion rapida:
+## Documentacion
 
-```bash
-docker compose exec redis redis-cli FT.SUGGET autocomplete:queries "rede" MAX 5
-# Esperado: 5 sugerencias empezando por "redes neuronales"
+- Monografia / entrega: **[docs/entrega.md](docs/entrega.md)**
+- Despliegue del DWH: **[supabase/README.md](supabase/README.md)**
+- Mineria de datos: **[docs/mineria.md](docs/mineria.md)**
+- Dashboard BI: **[docs/dashboard_bi.md](docs/dashboard_bi.md)**
+- Modelo y decisiones: **[design/decisiones.md](design/decisiones.md)** · DER en `design/dwh.dbml` y `design/operativo.dbml`
 ```
