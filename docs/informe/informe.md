@@ -29,10 +29,9 @@ flowchart LR
     APP["App BUSCASAM<br/>(uso real)"] --> OP["Supabase: PostgreSQL<br/>schema operativo<br/>(OLTP)"]
     APP --> RED["Redis Cloud<br/>(Autocomplete & Sorted Sets)"]
     
-    OP -->|"Migración Incremental<br/>(orquestado por run_etl)"| DWH["Supabase: PostgreSQL<br/>schema dwh<br/>(OLAP)"]
-    
-    RED -->|"Extrae Top 20 Queries"| GHA["GitHub Actions<br/>(run_etl.py)"]
-    GHA -->|"Inyecta"| DWH
+    OP -->|"Extrae incremental<br/>(dwh.run_etl)"| GHA["GitHub Actions<br/>(run_etl.py)"]
+    RED -->|"Extrae Top 20 Queries"| GHA
+    GHA -->|"Carga"| DWH["Supabase: PostgreSQL<br/>schema dwh<br/>(OLAP)"]
     
     DWH --> BI["Power BI Web<br/>(Dashboard interactivo)"]
 ```
