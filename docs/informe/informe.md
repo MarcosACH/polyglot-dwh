@@ -1,7 +1,8 @@
 # INFORME INTEGRADOR DE BASE DE DATOS: BUSCASAM
 
 **Grupo 3**  
-**Integrantes:** Matías E. Raina, Tomás I. Nadal, Marcos Achaval, Lucas Achaval, Nicolás Cirulli
+**Integrantes:** Matías E. Raina, Tomás I. Nadal, Marcos Achaval, Lucas Achaval, Nicolás Cirulli  
+**Repositorio GitHub:** [MarcosACH/tpi-bases-de-datos](https://github.com/MarcosACH/tpi-bases-de-datos)
 
 ---
 
@@ -502,8 +503,13 @@ RETURNS TABLE (
 $$;
 ```
 
-## 7. Anexos Visuales: Dashboard Analítico e Interfaz
+## 7. Anexos: Repositorio de Código y Dashboard Analítico
 
+### Repositorio de Código Fuente
+El código fuente completo del proyecto, incluyendo el esquema operativo (OLTP), el diseño de base de datos relacional y NoSQL, los scripts del pipeline ETL y configuraciones, se encuentra disponible en:
+- **Repositorio GitHub:** [MarcosACH/tpi-bases-de-datos](https://github.com/MarcosACH/tpi-bases-de-datos)
+
+### Dashboard Analítico e Interfaz
 *(En esta sección se documenta gráficamente el resultado final de la plataforma y el dashboard BI).*
 
 ### Vista General del DWH (Power BI)
