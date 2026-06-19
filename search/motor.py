@@ -1,10 +1,24 @@
 import os
+from contextlib import contextmanager
 import fitz
 import psycopg2
 from sentence_transformers import SentenceTransformer
 
 def iniciar_modelo():
     return SentenceTransformer('all-MiniLM-L6-v2')
+
+@contextmanager
+def _conexion(db_url):
+    """Abre la conexion a PostgreSQL y garantiza el cierre.
+
+    Si el bloque sale por una excepcion sin commit, psycopg2 descarta la
+    transaccion al cerrar (rollback implicito).
+    """
+    conn = psycopg2.connect(db_url)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 def extraer_texto_pdf(ruta_pdf):
     if not os.path.exists(ruta_pdf):
@@ -40,34 +54,31 @@ def insertar_documento(db_url, datos):
         ) VALUES (%s, %s, 1);
     """
     
-    conn = None
     try:
-        conn = psycopg2.connect(db_url)
-        cursor = conn.cursor()
-        
-        # 1. Insertar el documento y obtener el ID autogenerado
-        cursor.execute(query_doc, (
-            datos['titulo'], datos['abstract'], datos['texto_completo'], datos['visibilidad'],
-            datos['id_tipo'], datos['id_materia'], datos['id_uploader'], datos['archivo_url'],
-            datos['embedding']
-        ))
-        row = cursor.fetchone()
-        if row is None:
-            raise ValueError("No se pudo obtener el ID del documento insertado")
-        id_documento = row[0]
-        
-        # 2. Insertar la co-autoría principal para el uploader
-        cursor.execute(query_autor, (id_documento, datos['id_uploader']))
-        
-        conn.commit()
-        print(f"Documento insertado con éxito en el esquema operativo (ID: {id_documento}).")
-        print(f"Autor principal (ID Usuario: {datos['id_uploader']}) asociado en operativo.documento_autor.")
-        return id_documento
+        with _conexion(db_url) as conn:
+            cursor = conn.cursor()
+
+            # 1. Insertar el documento y obtener el ID autogenerado
+            cursor.execute(query_doc, (
+                datos['titulo'], datos['abstract'], datos['texto_completo'], datos['visibilidad'],
+                datos['id_tipo'], datos['id_materia'], datos['id_uploader'], datos['archivo_url'],
+                datos['embedding']
+            ))
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError("No se pudo obtener el ID del documento insertado")
+            id_documento = row[0]
+
+            # 2. Insertar la co-autoría principal para el uploader
+            cursor.execute(query_autor, (id_documento, datos['id_uploader']))
+
+            conn.commit()
+            print(f"Documento insertado con éxito en el esquema operativo (ID: {id_documento}).")
+            print(f"Autor principal (ID Usuario: {datos['id_uploader']}) asociado en operativo.documento_autor.")
+            return id_documento
     except Exception as e:
         print(f"Error de base de datos en inserción: {e}")
-        if conn:
-            conn.rollback()
-        raise e
+        raise
     finally:
         if conn:
             conn.close()
@@ -87,16 +98,12 @@ def buscar_documentos_semanticos(db_url, model, query_usuario, limite, umbral):
         ORDER BY similitud DESC
         LIMIT %s;
     """
-    conn = None
     resultados = []
     try:
-        conn = psycopg2.connect(db_url)
-        cursor = conn.cursor()
-        cursor.execute(query_sql, (query_vector, umbral, limite))
-        resultados = cursor.fetchall()
+        with _conexion(db_url) as conn:
+            cursor = conn.cursor()
+            cursor.execute(query_sql, (query_vector, umbral, limite))
+            resultados = cursor.fetchall()
     except Exception as e:
         print(f"Error en la búsqueda semántica: {e}")
-    finally:
-        if conn:
-            conn.close()
     return resultados

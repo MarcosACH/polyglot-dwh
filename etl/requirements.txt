@@ -1,4 +1,5 @@
 # ETL BUSCASAM (operativo -> dwh + Redis -> dwh). Dependencias livianas.
-psycopg2-binary>=2.9.0
-redis>=5.0.0
-python-dotenv>=1.0.0
+# Cota de version mayor para evitar drift que rompa la reproducibilidad.
+psycopg2-binary>=2.9,<3
+redis>=5.0,<6
+python-dotenv>=1.0,<2

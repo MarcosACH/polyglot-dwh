@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 import motor as mv
 
@@ -10,15 +11,21 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if __name__ == "__main__":
+    if not DATABASE_URL:
+        raise SystemExit(
+            "[error] DATABASE_URL no esta definida. Copia .env.example a .env y completala."
+        )
+
     print("Inicializando modelo de IA...")
     modelo = mv.iniciar_modelo()
-    
+
     # =========================================================
     # ACCION A: INDEXAR UN DOCUMENTO (Simulando request de la App)
     # =========================================================
     print("\n--- EJECUTANDO INDEXACION ---")
-    
-    from pathlib import Path
+
+    # paper_prueba.pdf no se versiona en el repo: si no existe, la indexacion
+    # se saltea (FileNotFoundError) y solo se ejecuta la demo de busqueda.
     base_dir = Path(__file__).resolve().parent
     archivo_entrada = str(base_dir / "paper_prueba.pdf")
     payload_formulario = {

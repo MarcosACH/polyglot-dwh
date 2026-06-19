@@ -97,56 +97,28 @@ def seed_operativo():
         cursor.close()
         conn.close()
 
+def run_subprocess(script_path, descripcion):
+    """Corre un script hijo heredando el entorno (DATABASE_URL/REDIS_URL ya estan
+    en os.environ via load_dotenv) y dejando que su salida se muestre en vivo."""
+    try:
+        # CWD en la carpeta del script para que resuelva sus rutas relativas (ej: data.json)
+        subprocess.run(
+            [sys.executable, str(script_path)],
+            cwd=str(script_path.parent),
+            check=True,
+        )
+        print(f"[ok] {descripcion} ejecutado con exito.")
+    except subprocess.CalledProcessError:
+        print(f"[error] Fallo al ejecutar {descripcion} (ver salida arriba).")
+        sys.exit(1)
+
 def seed_redis():
     print("\n=== SEMBRANDO DATOS EN REDIS CLOUD ===")
-    env = os.environ.copy()
-    if REDIS_URL is None:
-        raise ValueError("REDIS_URL no está configurada")
-    env["REDIS_URL"] = REDIS_URL
-
-    # Ejecutamos el script de seed de Redis
-    seed_script = ROOT_DIR / "redis" / "seed" / "seed.py"
-
-    try:
-        # CWD en redis/seed para que encuentre data.json
-        result = subprocess.run(
-            [sys.executable, str(seed_script)],
-            env=env,
-            cwd=str(seed_script.parent),
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        print(result.stdout)
-        print("[ok] Seed de Redis ejecutado con exito.")
-    except subprocess.CalledProcessError as e:
-        print(f"[error] Error al ejecutar el seed de Redis:\n{e.stderr}")
-        sys.exit(1)
+    run_subprocess(ROOT_DIR / "redis" / "seed" / "seed.py", "Seed de Redis")
 
 def run_etl():
     print("\n=== EJECUTANDO EL ETL COMPLETO ===")
-    env = os.environ.copy()
-    if DATABASE_URL is None or REDIS_URL is None:
-        raise ValueError("DATABASE_URL o REDIS_URL no están configuradas")
-    env["DATABASE_URL"] = DATABASE_URL
-    env["REDIS_URL"] = REDIS_URL
-
-    etl_script = Path(__file__).resolve().parent / "run_etl.py"
-
-    try:
-        result = subprocess.run(
-            [sys.executable, str(etl_script)],
-            env=env,
-            cwd=str(etl_script.parent),
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        print(result.stdout)
-        print("[ok] ETL ejecutado y validado con exito.")
-    except subprocess.CalledProcessError as e:
-        print(f"[error] Error al ejecutar el ETL:\n{e.stderr}")
-        sys.exit(1)
+    run_subprocess(Path(__file__).resolve().parent / "run_etl.py", "ETL")
 
 def main():
     check_env()

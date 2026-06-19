@@ -1,2 +1,4 @@
-redis>=5.0
-PyJWT>=2.8
+# Seed de Redis (autocomplete, JWT blacklist, rate limit, sesiones).
+# Cota de version mayor para evitar drift que rompa la reproducibilidad.
+redis>=5.0,<6
+PyJWT>=2.8,<3
