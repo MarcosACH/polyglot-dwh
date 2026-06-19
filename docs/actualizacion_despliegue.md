@@ -40,7 +40,7 @@ REDIS_URL="redis://default:<password>@<host>:<port>"
 
 ## 3. Automatización en la Nube (GitHub Actions)
 
-Se creó el archivo [.github/workflows/run_etl.yml](file:///home/nicolas/UNSAM/Bases%20de%20datos/tpi-bases-de-datos/.github/workflows/run_etl.yml). El pipeline está configurado para:
+Se creó el archivo [.github/workflows/etl.yml](../.github/workflows/etl.yml). El pipeline está configurado para:
 * Correr de manera automática **todos los días a las 00:00 UTC**.
 * Correr manualmente desde la pestaña **Actions** en el repositorio de GitHub.
 

@@ -2,7 +2,7 @@
 
 **Grupo 3**  
 **Integrantes:** Matías E. Raina, Tomás I. Nadal, Marcos Achaval, Lucas Achaval, Nicolás Cirulli  
-**Repositorio GitHub:** [MarcosACH/tpi-bases-de-datos](https://github.com/MarcosACH/tpi-bases-de-datos)
+**Repositorio GitHub:** [MarcosACH/polyglot-dwh](https://github.com/MarcosACH/polyglot-dwh)
 
 ---
 
@@ -507,7 +507,7 @@ $$;
 
 ### Repositorio de Código Fuente
 El código fuente completo del proyecto, incluyendo el esquema operativo (OLTP), el diseño de base de datos relacional y NoSQL, los scripts del pipeline ETL y configuraciones, se encuentra disponible en:
-- **Repositorio GitHub:** [MarcosACH/tpi-bases-de-datos](https://github.com/MarcosACH/tpi-bases-de-datos)
+- **Repositorio GitHub:** [MarcosACH/polyglot-dwh](https://github.com/MarcosACH/polyglot-dwh)
 
 ### Dashboard Analítico e Interfaz
 *(En esta sección se documenta gráficamente el resultado final de la plataforma y el dashboard BI).*
