@@ -1,5 +1,3 @@
-# Busqueda semantica (pgvector + embeddings). Dependencias pesadas (arrastran torch).
-# Cota de version mayor para evitar drift que rompa la reproducibilidad.
 psycopg2-binary>=2.9,<3
 sentence-transformers>=2.2,<4
 PyMuPDF>=1.24,<2

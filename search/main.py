@@ -24,8 +24,6 @@ if __name__ == "__main__":
     # =========================================================
     print("\n--- EJECUTANDO INDEXACION ---")
 
-    # paper_prueba.pdf no se versiona en el repo: si no existe, la indexacion
-    # se saltea (FileNotFoundError) y solo se ejecuta la demo de busqueda.
     base_dir = Path(__file__).resolve().parent
     archivo_entrada = str(base_dir / "paper_prueba.pdf")
     payload_formulario = {
